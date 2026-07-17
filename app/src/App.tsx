@@ -1,10 +1,20 @@
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import EvidenceDrawer from "./components/EvidenceDrawer";
 import FlightMode from "./components/FlightMode";
 import Inspector from "./components/Inspector";
 import MotorSelector from "./components/MotorSelector";
 import ReviewPanel from "./components/ReviewPanel";
 import Viewport from "./components/Viewport";
+import {
+  canRedo,
+  canUndo,
+  emptyHistory,
+  pushCommand,
+  redo,
+  replaceDesign,
+  undo,
+  type CommandHistory,
+} from "./core/commands";
 import { initialRunStatus, reduceRunStatus } from "./core/runState";
 import type { Design, MotorInfo, RunRecord } from "./core/types";
 import { fetchMotors, fetchReferenceDesign, runSimulation } from "./ipc";
@@ -23,6 +33,10 @@ export default function App() {
   const [status, dispatch] = useReducer(reduceRunStatus, initialRunStatus);
   const [mode, setMode] = useState<"design" | "flight" | "review">("design");
   const [error, setError] = useState<string | null>(null);
+  // Undo/redo history lives in a ref: commands close over design snapshots,
+  // so the ref never needs to trigger renders itself — setDesign does that.
+  const historyRef = useRef<CommandHistory>(emptyHistory);
+  const [, bumpHistory] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
     fetchReferenceDesign().then(setDesign).catch((e) => setError(String(e)));
@@ -34,7 +48,29 @@ export default function App() {
   }
 
   const edit = (next: Design) => {
-    setDesign(next);
+    const r = pushCommand(historyRef.current, replaceDesign(design, next), design);
+    historyRef.current = r.history;
+    setDesign(r.design);
+    bumpHistory();
+    dispatch({ type: "EDIT" });
+  };
+
+  // An undone design is a dirty design — the run-state machine stays authoritative.
+  const doUndo = () => {
+    if (!canUndo(historyRef.current)) return;
+    const r = undo(historyRef.current, design);
+    historyRef.current = r.history;
+    setDesign(r.design);
+    bumpHistory();
+    dispatch({ type: "EDIT" });
+  };
+
+  const doRedo = () => {
+    if (!canRedo(historyRef.current)) return;
+    const r = redo(historyRef.current, design);
+    historyRef.current = r.history;
+    setDesign(r.design);
+    bumpHistory();
     dispatch({ type: "EDIT" });
   };
 
@@ -57,6 +93,8 @@ export default function App() {
     setError(null);
     setRecord(null);
     setMode("design");
+    historyRef.current = emptyHistory;
+    bumpHistory();
     dispatch({ type: "RESET" });
     try {
       setDesign(await fetchReferenceDesign());
@@ -67,8 +105,15 @@ export default function App() {
 
   const badge = STATE_BADGE[status.state];
 
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
+    e.preventDefault();
+    if (e.shiftKey) doRedo();
+    else doUndo();
+  };
+
   return (
-    <div style={{ padding: 20 }}>
+    <div style={{ padding: 20 }} tabIndex={-1} onKeyDown={onKeyDown}>
       <header style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
         <h2 style={{ margin: 0 }}>Ascent</h2>
         <span
@@ -87,6 +132,18 @@ export default function App() {
         </button>
         <button onClick={reset} title="Restore the reference design and clear results">
           Reset demo
+        </button>
+        <button onClick={doUndo} disabled={!canUndo(historyRef.current)} title="Undo (⌘Z)">
+          Undo
+        </button>
+        <button onClick={doRedo} disabled={!canRedo(historyRef.current)} title="Redo (⇧⌘Z)">
+          Redo
+        </button>
+        <button onClick={doUndo} disabled={!canUndo(historyRef.current)} title="Undo (⌘Z)">
+          Undo
+        </button>
+        <button onClick={doRedo} disabled={!canRedo(historyRef.current)} title="Redo (⇧⌘Z)">
+          Redo
         </button>
         <nav style={{ marginLeft: "auto" }}>
           <button onClick={() => setMode("design")} disabled={mode === "design"}>
