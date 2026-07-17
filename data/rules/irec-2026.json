@@ -1,0 +1,959 @@
+{
+  "schema_version": "1.0.0",
+  "id": "irec-2026-flight-review",
+  "title": "IREC 2026 numeric flight-review rules",
+  "retrieved_date": "2026-07-17",
+  "sources": [
+    {
+      "document_name": "International Rocket Engineering Competition Rules & Requirements Document",
+      "version": "2026 ver. 1.0",
+      "effective_date": "2025-10-05",
+      "url": "https://www.esrarocket.org/s/IREC-Rules-and-Requirements-Document-2026-v10-f8wf.pdf",
+      "sha256": "eab4e31ef47e75d694d520928ed6d04dd9723b2e73cd8c3163b06d24ec7e71ea"
+    },
+    {
+      "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+      "version": "2026 V1.1",
+      "effective_date": "2026-02-23",
+      "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+      "sha256": "9f195262f8d9b233d21832911a9d879528e9da425cecf5989dfa32955cca9b1f"
+    }
+  ],
+  "rules": [
+    {
+      "id": "irec-2026-target-apogee-10k",
+      "description": "Target apogee for the scored 10K single-stage categories.",
+      "quantity": "target_apogee_agl",
+      "comparator": "target",
+      "value": { "kind": "scalar", "number": 10000 },
+      "units": "ft AGL",
+      "applicability": {
+        "allowed_configurations": [
+          {
+            "apogee_category": "10k",
+            "stage_configuration": "single_stage",
+            "propulsion_origins": ["COTS"],
+            "propulsion_types": ["solid", "hybrid"]
+          },
+          {
+            "apogee_category": "10k",
+            "stage_configuration": "single_stage",
+            "propulsion_origins": ["SRAD"],
+            "propulsion_types": ["solid"]
+          },
+          {
+            "apogee_category": "10k",
+            "stage_configuration": "single_stage",
+            "propulsion_origins": ["SRAD"],
+            "propulsion_types": ["hybrid", "liquid"]
+          }
+        ],
+        "apogee_categories": ["10k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage"],
+        "conditions": [
+          "COTS is limited to solid or hybrid propulsion.",
+          "SRAD may use solid, hybrid, or liquid propulsion."
+        ]
+      },
+      "authority": "scoring_target",
+      "evaluation_scope": "simulation_and_postflight",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Rules & Requirements Document",
+        "version": "2026 ver. 1.0",
+        "section": "2.0",
+        "section_title": "International Rocket Engineering Competition Overview",
+        "page": 8,
+        "url": "https://www.esrarocket.org/s/IREC-Rules-and-Requirements-Document-2026-v10-f8wf.pdf",
+        "quote": "10,000 ft AGL apogee with commercial-off-the-shelf (COTS) solid or hybrid rocket propulsion system"
+      }
+    },
+    {
+      "id": "irec-2026-target-apogee-30k",
+      "description": "Target apogee for the scored 30K single-stage and two-stage categories.",
+      "quantity": "target_apogee_agl",
+      "comparator": "target",
+      "value": { "kind": "scalar", "number": 30000 },
+      "units": "ft AGL",
+      "applicability": {
+        "allowed_configurations": [
+          {
+            "apogee_category": "30k",
+            "stage_configuration": "single_stage",
+            "propulsion_origins": ["COTS"],
+            "propulsion_types": ["solid", "hybrid"]
+          },
+          {
+            "apogee_category": "30k",
+            "stage_configuration": "single_stage",
+            "propulsion_origins": ["SRAD"],
+            "propulsion_types": ["solid"]
+          },
+          {
+            "apogee_category": "30k",
+            "stage_configuration": "single_stage",
+            "propulsion_origins": ["SRAD"],
+            "propulsion_types": ["hybrid", "liquid"]
+          },
+          {
+            "apogee_category": "30k",
+            "stage_configuration": "two_stage",
+            "propulsion_origins": ["COTS", "SRAD"],
+            "propulsion_types": ["solid", "hybrid", "liquid"]
+          }
+        ],
+        "apogee_categories": ["30k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": [
+          "Single-stage COTS is limited to solid or hybrid propulsion.",
+          "Single-stage SRAD may use solid, hybrid, or liquid propulsion.",
+          "The two-stage 30K category permits any propulsion type."
+        ]
+      },
+      "authority": "scoring_target",
+      "evaluation_scope": "simulation_and_postflight",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Rules & Requirements Document",
+        "version": "2026 ver. 1.0",
+        "section": "2.0",
+        "section_title": "International Rocket Engineering Competition Overview",
+        "page": 8,
+        "url": "https://www.esrarocket.org/s/IREC-Rules-and-Requirements-Document-2026-v10-f8wf.pdf",
+        "quote": "30,000 ft AGL apogee Two Stage any propulsion type"
+      }
+    },
+    {
+      "id": "irec-2026-target-apogee-45k",
+      "description": "Target apogee for the scored 45K two-stage category.",
+      "quantity": "target_apogee_agl",
+      "comparator": "target",
+      "value": { "kind": "scalar", "number": 45000 },
+      "units": "ft AGL",
+      "applicability": {
+        "allowed_configurations": [
+          {
+            "apogee_category": "45k",
+            "stage_configuration": "two_stage",
+            "propulsion_origins": ["COTS", "SRAD"],
+            "propulsion_types": ["solid", "hybrid", "liquid"]
+          }
+        ],
+        "apogee_categories": ["45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["two_stage"],
+        "conditions": ["The source defines no single-stage 45K category and permits any propulsion type for two-stage."]
+      },
+      "authority": "scoring_target",
+      "evaluation_scope": "simulation_and_postflight",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Rules & Requirements Document",
+        "version": "2026 ver. 1.0",
+        "section": "2.0",
+        "section_title": "International Rocket Engineering Competition Overview",
+        "page": 8,
+        "url": "https://www.esrarocket.org/s/IREC-Rules-and-Requirements-Document-2026-v10-f8wf.pdf",
+        "quote": "45,000 ft AGL apogee Two Stage any propulsion type"
+      }
+    },
+    {
+      "id": "irec-2026-payload-mass-minimum",
+      "description": "Minimum payload mass carried by the launch vehicle.",
+      "quantity": "payload_mass",
+      "comparator": "gte",
+      "value": { "kind": "scalar", "number": 4.4 },
+      "units": "lb",
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": []
+      },
+      "authority": "requirement",
+      "evaluation_scope": "design_and_inspection",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Rules & Requirements Document",
+        "version": "2026 ver. 1.0",
+        "section": "2.3.1",
+        "section_title": "Payload Mass",
+        "page": 10,
+        "url": "https://www.esrarocket.org/s/IREC-Rules-and-Requirements-Document-2026-v10-f8wf.pdf",
+        "quote": "The launch vehicle shall carry no less than 4.4 lbs. of payload."
+      }
+    },
+    {
+      "id": "irec-2026-payload-weigh-in-tolerance",
+      "description": "Official-scale shortfall accepted without penalty; this is an inspection allowance, not a design minimum.",
+      "quantity": "official_payload_weigh_in_shortfall",
+      "comparator": "lte",
+      "value": { "kind": "scalar", "number": 5 },
+      "units": "percent of specified minimum",
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["Applies only to the official competition weigh-in discrepancy."]
+      },
+      "authority": "operational_allowance",
+      "evaluation_scope": "inspection",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Rules & Requirements Document",
+        "version": "2026 ver. 1.0",
+        "section": "2.3.1",
+        "section_title": "Payload Mass",
+        "page": 10,
+        "url": "https://www.esrarocket.org/s/IREC-Rules-and-Requirements-Document-2026-v10-f8wf.pdf",
+        "quote": "competition officials will accept payload weigh-ins as much as 5% (~0.2 lb.) less than the specified minimum without penalty"
+      }
+    },
+    {
+      "id": "irec-2026-apogee-scoring-window",
+      "description": "Apogee-error window within which altitude-accuracy points are awarded.",
+      "quantity": "absolute_apogee_error_relative_to_target",
+      "comparator": "within_plus_minus",
+      "value": { "kind": "relative_tolerance", "number": 30, "reference_quantity": "selected_target_apogee" },
+      "units": "percent",
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["Applies to the eight scored categories, not non-competing demonstrations."]
+      },
+      "authority": "scoring_rule",
+      "evaluation_scope": "postflight",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Rules & Requirements Document",
+        "version": "2026 ver. 1.0",
+        "section": "2.8.1.4",
+        "section_title": "Scoring Flight Performance",
+        "page": 30,
+        "url": "https://www.esrarocket.org/s/IREC-Rules-and-Requirements-Document-2026-v10-f8wf.pdf",
+        "quote": "Points will be awarded for apogees within ±30% of the 10,000 ft AGL, or, 30,000 ft AGL, or 45,000 ft AGL target apogee"
+      }
+    },
+    {
+      "id": "irec-2026-recovery-zipper-excessive-damage",
+      "description": "Total zipper length above this threshold is classified as excessive recovery damage.",
+      "quantity": "total_zipper_length",
+      "comparator": "gt",
+      "value": { "kind": "scalar", "number": 1 },
+      "units": "caliber",
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["Postflight recovery-scoring criterion."]
+      },
+      "authority": "scoring_rule",
+      "evaluation_scope": "postflight",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Rules & Requirements Document",
+        "version": "2026 ver. 1.0",
+        "section": "2.8.1.4",
+        "section_title": "Scoring Flight Performance",
+        "page": 30,
+        "url": "https://www.esrarocket.org/s/IREC-Rules-and-Requirements-Document-2026-v10-f8wf.pdf",
+        "quote": "Zippers with a total length greater than one (1) caliber ... are considered excessive damage."
+      }
+    },
+    {
+      "id": "irec-2026-recovery-replaceable-fin-boattail-time-allowance",
+      "description": "Discretionary maximum replacement time for damaged fins or boat tails designed for rapid replacement during recovery scoring.",
+      "quantity": "replaceable_fin_or_boattail_repair_time",
+      "comparator": "lte",
+      "value": { "kind": "scalar", "number": 30 },
+      "units": "minutes",
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": [
+          "Applies only to damaged fins or boat tails specifically designed for easy, rapid replacement.",
+          "Replacement components must be on hand and allowance remains at competition officials' discretion."
+        ]
+      },
+      "authority": "discretionary_scoring_allowance",
+      "evaluation_scope": "postflight",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Rules & Requirements Document",
+        "version": "2026 ver. 1.0",
+        "section": "2.8.1.4",
+        "section_title": "Scoring Flight Performance",
+        "page": 30,
+        "url": "https://www.esrarocket.org/s/IREC-Rules-and-Requirements-Document-2026-v10-f8wf.pdf",
+        "quote": "replacement of damaged fins or boat tails specifically designed for easy, rapid replacement is allowed if such components are on hand and can reasonably be replaced within 30 minutes"
+      }
+    },
+    {
+      "id": "irec-2026-rail-departure-velocity-minimum",
+      "description": "Minimum rail departure velocity evaluated at the effective rail length.",
+      "quantity": "rail_departure_velocity",
+      "comparator": "gte",
+      "value": { "kind": "scalar", "number": 25 },
+      "units": "m/s",
+      "source_equivalents": [{ "number": 82, "units": "ft/s" }],
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": [
+          "For tower launchers, evaluate when the center of pressure clears the tower (DTEG 5.3.3).",
+          "Cluster rockets must satisfy the minimum on any single motor in the cluster (DTEG 5.3.4)."
+        ]
+      },
+      "authority": "requirement",
+      "evaluation_scope": "simulation_and_design",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "5.3.1",
+        "section_title": "Rail Exit Velocity",
+        "page": 12,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "Teams shall design their rockets to attain a rail departure velocity of at least 25 m/s (82 ft/s) based on the effective length of the rail."
+      }
+    },
+    {
+      "id": "irec-2026-published-rail-length-single-stage",
+      "description": "Current actual launch-rail length published for single-stage rockets; effective rail length remains vehicle-dependent.",
+      "quantity": "published_actual_rail_length",
+      "comparator": "eq",
+      "value": { "kind": "scalar", "number": 17 },
+      "units": "ft",
+      "applicability": {
+        "apogee_categories": ["10k", "30k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage"],
+        "conditions": ["Published equipment value, not the effective rail length used to evaluate departure velocity."]
+      },
+      "authority": "published_equipment",
+      "evaluation_scope": "simulation_input",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "5.3.1",
+        "section_title": "Rail Exit Velocity",
+        "page": 12,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "Actual rail lengths are currently 17 feet for single-stage rockets and 21 feet for two-stage rockets."
+      }
+    },
+    {
+      "id": "irec-2026-published-rail-length-two-stage",
+      "description": "Current actual launch-rail length published for two-stage rockets; effective rail length remains vehicle-dependent.",
+      "quantity": "published_actual_rail_length",
+      "comparator": "eq",
+      "value": { "kind": "scalar", "number": 21 },
+      "units": "ft",
+      "applicability": {
+        "apogee_categories": ["30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["two_stage"],
+        "conditions": ["Published equipment value, not the effective rail length used to evaluate departure velocity."]
+      },
+      "authority": "published_equipment",
+      "evaluation_scope": "simulation_input",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "5.3.1",
+        "section_title": "Rail Exit Velocity",
+        "page": 12,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "Actual rail lengths are currently 17 feet for single-stage rockets and 21 feet for two-stage rockets."
+      }
+    },
+    {
+      "id": "irec-2026-air-start-altitude-inhibit-threshold",
+      "description": "An air-start motor must remain inhibited until the rocket reaches the specified fraction of simulated desired-firing altitude.",
+      "quantity": "air_start_actual_altitude_relative_to_simulated_firing_altitude",
+      "comparator": "gte",
+      "value": { "kind": "relative", "number": 70, "reference_quantity": "simulated_desired_firing_altitude" },
+      "units": "percent",
+      "applicability": {
+        "apogee_categories": ["30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["two_stage"],
+        "conditions": ["Applies to air-start motors and is one of several conditions that must all be met."]
+      },
+      "authority": "requirement",
+      "evaluation_scope": "flight_control",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "5.13.1.2",
+        "section_title": "Air-Start/Staged Flight Computer Requirements",
+        "page": 14,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "The rocket has reached an altitude of at least 70% of the simulated altitude at the time when initiator firing is desired"
+      }
+    },
+    {
+      "id": "irec-2026-air-start-threshold-simulation-angle",
+      "description": "Launch angle prescribed for the simulation used to set the air-start altitude threshold.",
+      "quantity": "air_start_threshold_simulation_launch_angle",
+      "comparator": "eq",
+      "value": { "kind": "scalar", "number": 0 },
+      "units": "degrees",
+      "applicability": {
+        "apogee_categories": ["30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["two_stage"],
+        "conditions": ["Applies only to the air-start threshold simulation, which must also use no wind."]
+      },
+      "authority": "simulation_assumption",
+      "evaluation_scope": "simulation_input",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "5.13.1.2",
+        "section_title": "Air-Start/Staged Flight Computer Requirements",
+        "page": 14,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "the simulation shall be performed at a 0° launch angle with no wind"
+      }
+    },
+    {
+      "id": "irec-2026-air-start-sustainer-angle-maximum",
+      "description": "Maximum sustainer flight-angle deviation from vertical for air-start ignition.",
+      "quantity": "sustainer_flight_angle_from_vertical",
+      "comparator": "lte",
+      "value": { "kind": "scalar", "number": 20 },
+      "units": "degrees",
+      "applicability": {
+        "apogee_categories": ["30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["two_stage"],
+        "conditions": ["Applies to ignition of air-start motors."]
+      },
+      "authority": "requirement",
+      "evaluation_scope": "flight_control",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "5.13.1.3",
+        "section_title": "Air-Start/Staged Flight Computer Requirements",
+        "page": 14,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "The sustainer flight angle is within 20° of vertical."
+      }
+    },
+    {
+      "id": "irec-2026-dual-event-recovery-threshold",
+      "description": "Independently recovered bodies anticipated to exceed this apogee require dual-event recovery.",
+      "quantity": "anticipated_body_apogee_agl",
+      "comparator": "gt",
+      "value": { "kind": "scalar", "number": 457 },
+      "units": "m AGL",
+      "source_equivalents": [{ "number": 1500, "units": "ft AGL" }],
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["Applies per independently recovered launch-vehicle body, including payloads; two-stage boosters are included."]
+      },
+      "authority": "requirement_trigger",
+      "evaluation_scope": "recovery_design",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "6.1.1 and 6.1.3",
+        "section_title": "Dual-Event Parachute and Parafoil Recovery",
+        "page": 17,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "Each independently recovered launch vehicle body, including payloads, anticipated to reach an apogee above 457 m (1,500 ft) above ground level (AGL) shall follow a dual-event recovery operations concept. Boosters from two-stage rockets are subject to the dual-event provisions of this section."
+      }
+    },
+    {
+      "id": "irec-2026-single-event-release-exemption-threshold",
+      "description": "Independently recovered bodies released below this altitude are exempt from dual deployment.",
+      "quantity": "independently_recovered_body_release_altitude_agl",
+      "comparator": "lt",
+      "value": { "kind": "scalar", "number": 457 },
+      "units": "m AGL",
+      "source_equivalents": [{ "number": 1500, "units": "ft AGL" }],
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["The source does not resolve the exact 457 m boundary between its above/below wordings."]
+      },
+      "authority": "exemption_threshold",
+      "evaluation_scope": "recovery_design",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "6.1.2",
+        "section_title": "Dual-Event Parachute and Parafoil Recovery",
+        "page": 17,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "Independently recovered bodies (payloads) released at an altitude below 1,500 ft (457 m) AGL, are exempted from dual deployment"
+      }
+    },
+    {
+      "id": "irec-2026-main-deployment-altitude-maximum",
+      "description": "Maximum AGL altitude for the main recovery deployment event.",
+      "quantity": "main_recovery_deployment_altitude_agl",
+      "comparator": "lte",
+      "value": { "kind": "scalar", "number": 457 },
+      "units": "m AGL",
+      "source_equivalents": [{ "number": 1500, "units": "ft AGL" }],
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["Applies to any recovery method requiring a main deployment event."]
+      },
+      "authority": "requirement",
+      "evaluation_scope": "recovery_design_and_simulation",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "6.4.1",
+        "section_title": "Main Deployment Event",
+        "page": 18,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "The main deployment event for any recovery method shall occur at an altitude no higher than 457 m (1,500 ft) AGL."
+      }
+    },
+    {
+      "id": "irec-2026-descent-calculation-site-elevation",
+      "description": "Launch-site elevation prescribed for drogue and landing descent-rate calculations.",
+      "quantity": "descent_rate_calculation_site_elevation_msl",
+      "comparator": "eq",
+      "value": { "kind": "scalar", "number": 890 },
+      "units": "m MSL",
+      "source_equivalents": [{ "number": 2920, "units": "ft MSL" }],
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["Applies specifically to descent-rate calculations, not every trajectory calculation."]
+      },
+      "authority": "simulation_assumption",
+      "evaluation_scope": "recovery_simulation_input",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "6.3.2 and 6.4.2",
+        "section_title": "Initial Deployment Event; Main Deployment Event",
+        "page": 18,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "Descent rate calculations shall be based on a launch site elevation of 890 m (2,920 ft) MSL."
+      }
+    },
+    {
+      "id": "irec-2026-drogue-descent-rate-at-main-deployment",
+      "description": "Required drogue descent-rate band at the point of main deployment.",
+      "quantity": "drogue_descent_rate_at_main_deployment",
+      "comparator": "between",
+      "value": { "kind": "range", "lower": 20, "upper": 40, "boundary_semantics": "source_unspecified" },
+      "units": "m/s",
+      "source_equivalents": [{ "lower": 65, "upper": 131, "units": "ft/s" }],
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["The source says between 20-40 m/s but does not explicitly define endpoint inclusion."]
+      },
+      "authority": "requirement",
+      "evaluation_scope": "recovery_design_and_simulation",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "6.3.3",
+        "section_title": "Initial Deployment Event",
+        "page": 18,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "The descent rate under drogue shall be between 20-40 m/s (65-131 ft/s) at the point where the main parachute is deployed."
+      }
+    },
+    {
+      "id": "irec-2026-vehicle-landing-descent-rate-maximum",
+      "description": "Maximum vehicle descent rate at landing.",
+      "quantity": "vehicle_descent_rate_at_landing",
+      "comparator": "lt",
+      "value": { "kind": "scalar", "number": 11 },
+      "units": "m/s",
+      "source_equivalents": [{ "number": 36, "units": "ft/s" }],
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": []
+      },
+      "authority": "requirement",
+      "evaluation_scope": "recovery_design_and_simulation",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "6.4.3",
+        "section_title": "Main Deployment Event",
+        "page": 18,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "The vehicle's descent rate at landing shall be less than 11 m/s (36 ft/s)."
+      }
+    },
+    {
+      "id": "irec-2026-independent-payload-touchdown-rate-maximum",
+      "description": "Maximum touchdown descent velocity for a payload recovered independently from the launch vehicle.",
+      "quantity": "independent_payload_descent_velocity_at_touchdown",
+      "comparator": "lt",
+      "value": { "kind": "scalar", "number": 11 },
+      "units": "m/s",
+      "source_equivalents": [{ "number": 36, "units": "ft/s" }],
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["Applies only to deployable payloads that separate before landing."]
+      },
+      "authority": "requirement",
+      "evaluation_scope": "payload_recovery_design_and_simulation",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "9.1.2.1",
+        "section_title": "Payload Recovery",
+        "page": 29,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "Incorporate an independent recovery system, reducing the payload's descent velocity to less than 11 m/s (36 ft/s) at touchdown."
+      }
+    },
+    {
+      "id": "irec-2026-independent-payload-body-maximum",
+      "description": "Maximum number of independently recoverable bodies for a rocket with deployed payloads.",
+      "quantity": "independently_recoverable_deployed_payload_bodies",
+      "comparator": "lte",
+      "value": { "kind": "scalar", "number": 1 },
+      "units": "body",
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["Applies to rockets with payloads deployed before landing."]
+      },
+      "authority": "requirement",
+      "evaluation_scope": "payload_recovery_design",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "9.1.4",
+        "section_title": "Payload Recovery",
+        "page": 29,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "Rockets with deployed payloads shall contain no more than a single (1) independently recoverable body."
+      }
+    },
+    {
+      "id": "irec-2026-active-control-fail-neutral-angle",
+      "description": "Attitude deviation from launch elevation that requires an active-control system to default neutral.",
+      "quantity": "active_control_attitude_deviation_from_launch_elevation",
+      "comparator": "gt",
+      "value": { "kind": "scalar", "number": 30 },
+      "units": "degrees",
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["Applies only to launch vehicles implementing active flight controls."]
+      },
+      "authority": "requirement",
+      "evaluation_scope": "flight_control",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "7.3.1",
+        "section_title": "Designed to Fail Safe",
+        "page": 24,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "Control actuator systems (CAS) shall default to a neutral state whenever ... the launch vehicle's attitude exceeds 30° from its launch elevation."
+      }
+    },
+    {
+      "id": "irec-2026-active-control-altitude-alternative-10k",
+      "description": "10K altitude condition that may end active-control boost-phase dormancy.",
+      "quantity": "active_control_dormancy_release_altitude_agl",
+      "comparator": "gte",
+      "value": { "kind": "scalar", "number": 2000 },
+      "units": "m AGL",
+      "source_equivalents": [{ "number": 6500, "units": "ft AGL" }],
+      "applicability": {
+        "apogee_categories": ["10k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage"],
+        "conditions": ["Applies only to active controls and is an OR alternative to boost end or passing max-Q, not an unconditional minimum activation altitude."]
+      },
+      "authority": "conditional_requirement",
+      "evaluation_scope": "flight_control",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "7.4.1.3.2",
+        "section_title": "Boost Phase Dormancy",
+        "page": 24,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "For 10K flights: an altitude of 2,000 m (6,500 ft) AGL."
+      }
+    },
+    {
+      "id": "irec-2026-active-control-altitude-alternative-30k-45k",
+      "description": "30K/45K altitude condition that may end active-control boost-phase dormancy.",
+      "quantity": "active_control_dormancy_release_altitude_agl",
+      "comparator": "gte",
+      "value": { "kind": "scalar", "number": 6000 },
+      "units": "m AGL",
+      "source_equivalents": [{ "number": 19600, "units": "ft AGL" }],
+      "applicability": {
+        "apogee_categories": ["30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["Applies only to active controls and is an OR alternative to boost end or passing max-Q, not an unconditional minimum activation altitude."]
+      },
+      "authority": "conditional_requirement",
+      "evaluation_scope": "flight_control",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "7.4.1.3.1",
+        "section_title": "Boost Phase Dormancy",
+        "page": 24,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "For 30K and 45K flights: an altitude of 6,000 m (19,600 ft) AGL."
+      }
+    },
+    {
+      "id": "irec-2026-fin-flutter-velocity-margin-minimum",
+      "description": "Minimum fin-flutter velocity margin above maximum expected rocket velocity.",
+      "quantity": "fin_flutter_velocity_margin_above_maximum_expected_velocity",
+      "comparator": "gte",
+      "value": { "kind": "relative", "number": 50, "reference_quantity": "maximum_expected_rocket_velocity" },
+      "units": "percent above reference",
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": []
+      },
+      "authority": "requirement",
+      "evaluation_scope": "structural_design_and_simulation",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "8.2.2",
+        "section_title": "Overall Structural Integrity",
+        "page": 26,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "Teams shall ensure that the fin flutter velocity of the rocket is at least 50% higher than the maximum expected rocket velocity."
+      }
+    },
+    {
+      "id": "irec-2026-typical-launch-elevation-single-stage",
+      "description": "Typical single-stage launch elevation set by launch officials; not a hard design pass/fail limit.",
+      "quantity": "launch_elevation",
+      "comparator": "typical_plus_minus",
+      "value": { "kind": "nominal_with_tolerance", "nominal": 84, "tolerance": 2 },
+      "units": "degrees above horizontal",
+      "applicability": {
+        "apogee_categories": ["10k", "30k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage"],
+        "conditions": ["Launch officials set the actual elevation and may require a different angle for safety."]
+      },
+      "authority": "operational_default",
+      "evaluation_scope": "simulation_input",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "10.1.1",
+        "section_title": "Launch Azimuth and Elevation",
+        "page": 30,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "Single-stage rockets are typically launched at an elevation angle of 84° ±2°"
+      }
+    },
+    {
+      "id": "irec-2026-typical-launch-elevation-two-stage",
+      "description": "Typical multi-stage launch elevation set by launch officials; not a hard design pass/fail limit.",
+      "quantity": "launch_elevation",
+      "comparator": "typical_plus_minus",
+      "value": { "kind": "nominal_with_tolerance", "nominal": 87, "tolerance": 2 },
+      "units": "degrees above horizontal",
+      "applicability": {
+        "apogee_categories": ["30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["two_stage"],
+        "conditions": ["Launch officials set the actual elevation and may require a different angle for safety."]
+      },
+      "authority": "operational_default",
+      "evaluation_scope": "simulation_input",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "10.1.1",
+        "section_title": "Launch Azimuth and Elevation",
+        "page": 30,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "multi-stage flights are typically launched at 87° ±2°"
+      }
+    },
+    {
+      "id": "irec-2026-stability-minimum-subsonic",
+      "description": "Minimum stability margin for subsonic flight from launch through first recovery deployment.",
+      "quantity": "stability_margin_relative_to_rocket_length",
+      "comparator": "gte",
+      "value": { "kind": "scalar", "number": 7.5 },
+      "units": "percent of rocket length",
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["Subsonic regime; two-stage rockets evaluate the stack and sustainer separately."]
+      },
+      "authority": "requirement",
+      "evaluation_scope": "stability_simulation",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "10.2.1.1",
+        "section_title": "Ascent Stability",
+        "page": 30,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "For subsonic flights, the minimum stability margin is 7.5% of the length of the rocket."
+      }
+    },
+    {
+      "id": "irec-2026-stability-minimum-supersonic",
+      "description": "Minimum stability margin for supersonic flight from launch through first recovery deployment.",
+      "quantity": "stability_margin_relative_to_rocket_length",
+      "comparator": "gte",
+      "value": { "kind": "scalar", "number": 10 },
+      "units": "percent of rocket length",
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["Supersonic regime; two-stage rockets evaluate the stack and sustainer separately."]
+      },
+      "authority": "requirement",
+      "evaluation_scope": "stability_simulation",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "10.2.1.2",
+        "section_title": "Ascent Stability",
+        "page": 30,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "For supersonic flights, the minimum stability margin is 10% of the length of the rocket."
+      }
+    },
+    {
+      "id": "irec-2026-stability-maximum-at-launch",
+      "description": "Maximum stability margin at launch.",
+      "quantity": "stability_margin_relative_to_rocket_length_at_launch",
+      "comparator": "lte",
+      "value": { "kind": "scalar", "number": 18 },
+      "units": "percent of rocket length",
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["Evaluated from the no-wind stability simulation required by DTEG 10.2.3."]
+      },
+      "authority": "requirement",
+      "evaluation_scope": "stability_simulation",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "10.3.1.1",
+        "section_title": "Over-Stability",
+        "page": 30,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "The stability margin at launch shall not exceed 18% of the length of the rocket."
+      }
+    },
+    {
+      "id": "irec-2026-stability-maximum-through-flight",
+      "description": "Maximum stability margin through flight.",
+      "quantity": "stability_margin_relative_to_rocket_length_through_flight",
+      "comparator": "lte",
+      "value": { "kind": "scalar", "number": 25 },
+      "units": "percent of rocket length",
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["Evaluated from the no-wind stability simulation required by DTEG 10.2.3."]
+      },
+      "authority": "requirement",
+      "evaluation_scope": "stability_simulation",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "10.3.1.2",
+        "section_title": "Over-Stability",
+        "page": 30,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "The stability margin through the flight shall not exceed 25% of the length of the rocket."
+      }
+    },
+    {
+      "id": "irec-2026-fin-span-minimum",
+      "description": "Minimum fin span stated by the DTEG, based on the largest-diameter tube in the rocket or stage.",
+      "quantity": "fin_span_as_defined_by_dteg_relative_to_largest_tube_diameter",
+      "comparator": "gte",
+      "value": { "kind": "scalar", "number": 0.8 },
+      "units": "caliber",
+      "applicability": {
+        "apogee_categories": ["10k", "30k", "45k"],
+        "propulsion_origins": ["COTS", "SRAD"],
+        "propulsion_types": ["solid", "hybrid", "liquid"],
+        "stage_configurations": ["single_stage", "two_stage"],
+        "conditions": ["For two-stage rockets, apply per stage; see README for the source's span versus semi-span terminology ambiguity."]
+      },
+      "authority": "requirement",
+      "evaluation_scope": "geometry_design",
+      "citation": {
+        "document_name": "International Rocket Engineering Competition Design, Test, & Evaluation Guide",
+        "version": "2026 V1.1",
+        "section": "10.2.4",
+        "section_title": "Ascent Stability",
+        "page": 30,
+        "url": "https://www.esrarocket.org/s/2026-IREC-DTEG-V11.pdf",
+        "quote": "Teams shall not design rockets with a fin span less than 0.8 calibers, based on the largest diameter tube in the rocket"
+      }
+    }
+  ]
+}

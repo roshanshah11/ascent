@@ -11,9 +11,9 @@ Companion specs: `PROJECT_SPEC.md` (9-day slice), `IDEA_SPEC.md` (full idea).
 - [x] **Day 2 — flight phases + convergence** *(DONE 2026-07-17, commit `95841a1`)*
   Rail constraint, drag, 1976 standard atmosphere, event detection (liftoff, rail exit, burnout, apogee, recovery deploy, landing), chute descent, timestep convergence report.
   Exit passed: full event timeline; apogee stable to <1 mm at dt/2; 38/38 tests.
-- [ ] **Day 3 — one external reference**
-  Frozen rocket+motor fixture; compare vs manually exported OpenRocket (Alpha III / C6-5) values; record tolerances + assumptions.
-  Exit: evidence page states what agrees, what differs, why.
+- [x] **Day 3 — one external reference** *(DONE 2026-07-17)*
+  Frozen fixture from manual OpenRocket 24.12 export ("simple model rocket" example / C6-5); regression tests with explicit tolerances; `docs/EVIDENCE.md` agree/differ/why table.
+  Exit passed: apogee within 1.4%, max velocity 0.1%; every residual traced to a named modeling choice. 42/42 tests.
 - [ ] **Day 4 — parametric vehicle + stability**
   Nose/body/fins/payload/motor/chute model; mass, CG, Barrowman CP, time-varying stability; IREC constraints with rule-source links.
   Exit: editing mass/fins produces correct, tested stability changes.
@@ -35,7 +35,7 @@ Companion specs: `PROJECT_SPEC.md` (9-day slice), `IDEA_SPEC.md` (full idea).
 
 ## Non-code (parallel track)
 
-- [ ] **OpenRocket golden fixture** (needed by Day 3): open OpenRocket 24.12 → Alpha III example → C6-5 → run sim → record apogee/max-velocity/burnout, export CSV into `crates/*/tests/fixtures/`. *(Manual — Roshan, ~10 min.)*
+- [x] **OpenRocket golden fixture** *(DONE 2026-07-17 — Roshan exported; lives at `data/reference/openrocket-alpha3-c6.csv`)*
 - [ ] **Startup School 30-sec intro finalized** (due Jul 23) — skeleton exists; slot in one Ascent sentence.
 - [ ] **Co-founder target profile draft** (due Jul 23).
 - [ ] **Log build-reps** to vault `Log/` as each day's exit gate passes (progress-visibility rule).

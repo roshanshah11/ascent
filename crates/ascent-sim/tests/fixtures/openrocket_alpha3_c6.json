@@ -1,0 +1,53 @@
+{
+  "description": "OpenRocket golden reference: 'A simple model rocket' example on Estes C6-5",
+  "provenance": {
+    "tool": "OpenRocket 24.12",
+    "export": "data/reference/openrocket-alpha3-c6.csv (File > Export simulation table as CSV)",
+    "exported": "2026-07-17",
+    "simulation_name": "TestSimulation",
+    "note": "OpenRocket's bundled 'A simple model rocket' example, NOT the Estes Alpha III kit. Same 25 mm diameter and C6 motor class; heavier structure."
+  },
+  "launch_conditions": {
+    "gravity_ms2": 9.792,
+    "latitude_deg": 28.61,
+    "longitude_deg": -80.6,
+    "temperature_c": 15.0,
+    "pressure_mbar": 1013.25,
+    "wind_ms": 2.0,
+    "launch_rod_m": 1.0
+  },
+  "vehicle": {
+    "liftoff_mass_g": 71.259,
+    "motor_mass_g": 23.1,
+    "burnout_mass_g": 60.459,
+    "reference_diameter_m": 0.025,
+    "reference_area_m2": 4.909e-4,
+    "coast_cd_openrocket": 0.63,
+    "chute": {
+      "derivation": "post-deploy drag coefficient 115.2 on 4.909 cm2 reference area = cdA 0.0566 m2 = 30 cm chute at Cd 0.8",
+      "cd": 0.8,
+      "diameter_m": 0.30
+    }
+  },
+  "reference_values": {
+    "rail_exit_time_s": 0.209,
+    "rail_exit_velocity_ms": 17.796,
+    "burnout_time_s": 1.86,
+    "burnout_altitude_m": 102.591,
+    "burnout_velocity_ms": 94.546,
+    "max_velocity_ms": 95.3,
+    "apogee_m": 316.817,
+    "apogee_time_s": 7.278,
+    "deploy_time_s": 6.861,
+    "descent_rate_at_180m_ms": 4.17,
+    "ground_hit_time_s": 83.628,
+    "ground_hit_velocity_total_ms": 4.57
+  },
+  "known_model_differences": [
+    "OpenRocket flies 3D with 2 m/s wind and angle-of-attack drag; Ascent v0.1 is vertical point-mass with zero wind",
+    "OpenRocket Cd is Mach/Reynolds-dependent (0.87 static -> 0.63 coast); Ascent uses one constant Cd",
+    "OpenRocket deploys the chute at ejection charge (burnout + 5 s = 6.861 s, before apogee); Ascent deploys exactly at apogee",
+    "OpenRocket motor mass 23.1 g vs ThrustCurve NAR cert 24.1 g; matched by holding total liftoff mass equal (burnout mass identical: 60.459 g)",
+    "OpenRocket gravity is latitude-adjusted (9.792); Ascent default 9.80665 overridden to match"
+  ]
+}
