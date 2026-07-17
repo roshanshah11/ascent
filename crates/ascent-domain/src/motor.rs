@@ -8,6 +8,10 @@ use serde::{Deserialize, Serialize};
 pub struct Motor {
     pub designation: String,
     pub manufacturer: String,
+    /// Exact RASP header source line for imported motors, excluding its newline.
+    /// Bundled JSON motors omit this field to preserve their serialized form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_header: Option<String>,
     pub total_mass_kg: f64,
     pub propellant_mass_kg: f64,
     pub expected_total_impulse_ns: f64,

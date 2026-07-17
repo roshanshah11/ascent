@@ -56,7 +56,8 @@ pub fn parse_eng(text: &str, provenance: &Value) -> Result<Vec<Motor>, EngImport
 
     while i < lines.len() {
         let line_no = i + 1;
-        let trimmed = lines[i].trim();
+        let raw_header = lines[i].to_owned();
+        let trimmed = raw_header.trim();
         if trimmed.is_empty() || trimmed.starts_with(';') {
             i += 1;
             continue;
@@ -215,6 +216,7 @@ pub fn parse_eng(text: &str, provenance: &Value) -> Result<Vec<Motor>, EngImport
         motors.push(Motor {
             designation,
             manufacturer,
+            raw_header: Some(raw_header),
             total_mass_kg,
             propellant_mass_kg,
             expected_total_impulse_ns,

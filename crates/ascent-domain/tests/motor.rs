@@ -13,6 +13,7 @@ fn simple_motor() -> Motor {
     Motor {
         designation: "TEST".into(),
         manufacturer: "test".into(),
+        raw_header: None,
         total_mass_kg: 0.100,
         propellant_mass_kg: 0.050,
         expected_total_impulse_ns: 20.0,

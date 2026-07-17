@@ -78,6 +78,37 @@ fn manifest_and_physical_eng_corpus_have_exactly_the_same_files() {
 }
 
 #[test]
+fn parse_eng_retains_each_exact_raw_header_line() {
+    let source = "\tC6\t18 70 0-3-5-7 .0108 .0231 E   \n0.1 5\n0.2 0\n; separates entries\n B6 18 70 0 .0056 .0156 E\t\n0.1 4\n0.2 0\n";
+    let motors = parse_eng(source, &json!({})).expect("both entries should parse");
+    assert_eq!(
+        motors[0].raw_header.as_deref(),
+        Some("\tC6\t18 70 0-3-5-7 .0108 .0231 E   ")
+    );
+    assert_eq!(
+        motors[1].raw_header.as_deref(),
+        Some(" B6 18 70 0 .0056 .0156 E\t")
+    );
+    let raw_headers: Vec<Option<String>> = motors
+        .iter()
+        .map(|motor| {
+            serde_json::to_value(motor)
+                .expect("parsed motor should serialize")["raw_header"]
+                .as_str()
+                .map(ToOwned::to_owned)
+        })
+        .collect();
+
+    assert_eq!(
+        raw_headers,
+        vec![
+            Some("\tC6\t18 70 0-3-5-7 .0108 .0231 E   ".to_owned()),
+            Some(" B6 18 70 0 .0056 .0156 E\t".to_owned()),
+        ]
+    );
+}
+
+#[test]
 fn manifest_drives_exact_impulse_and_rejection_expectations_for_full_corpus() {
     let manifest: serde_json::Value = serde_json::from_str(MANIFEST).unwrap();
     let samples = manifest["samples"].as_array().expect("manifest samples must be an array");
