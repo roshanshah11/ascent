@@ -5,9 +5,11 @@
 
 mod design;
 mod evidence;
+mod project;
 mod review_ipc;
 
 pub use design::{run_design, Design, MotorInfo, RunRecord};
+pub use project::{from_toml, to_toml, Project};
 pub use evidence::{evidence_for, EvidenceReport};
 pub use review_ipc::{repair as review_repair, report as review_report, ReviewReport};
 
@@ -32,6 +34,16 @@ fn run_evidence(design: Design) -> Result<EvidenceReport, String> {
 }
 
 #[tauri::command]
+fn save_project(project: Project) -> Result<String, String> {
+    project::to_toml(&project)
+}
+
+#[tauri::command]
+fn load_project(contents: String) -> Result<Project, String> {
+    project::from_toml(&contents)
+}
+
+#[tauri::command]
 fn flight_review(target_apogee_m: f64) -> Result<ReviewReport, String> {
     review_ipc::report(target_apogee_m)
 }
@@ -49,6 +61,8 @@ pub fn run() {
             list_motors,
             run_simulation,
             run_evidence,
+            save_project,
+            load_project,
             flight_review,
             solve_review
         ])

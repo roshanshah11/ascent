@@ -18,3 +18,4 @@ ascent-review = { path = "../ascent-review" }
 tauri = { version = "2", features = [] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+toml = "0.8"
