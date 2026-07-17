@@ -4,11 +4,13 @@
 //! DTOs and downsamples the trajectory for playback.
 
 mod design;
+mod dispersion_ipc;
 mod evidence;
 mod project;
 mod review_ipc;
 
 pub use design::{run_design, Design, ImportedMotor, MotorInfo, RunRecord};
+pub use dispersion_ipc::DispersionRequest;
 pub use project::{from_toml, to_toml, Project};
 pub use evidence::{evidence_for, EvidenceReport};
 pub use review_ipc::{repair as review_repair, report as review_report, ReviewReport};
@@ -36,6 +38,14 @@ fn import_motor_file(contents: String) -> Result<ImportedMotor, String> {
 #[tauri::command]
 fn run_evidence(design: Design) -> Result<EvidenceReport, String> {
     evidence_for(&design)
+}
+
+#[tauri::command]
+fn run_dispersion(
+    design: Design,
+    request: DispersionRequest,
+) -> Result<ascent_sim::DispersionSummary, String> {
+    dispersion_ipc::run(&design, &request)
 }
 
 #[tauri::command]
@@ -67,6 +77,7 @@ pub fn run() {
             run_simulation,
             import_motor_file,
             run_evidence,
+            run_dispersion,
             save_project,
             load_project,
             flight_review,

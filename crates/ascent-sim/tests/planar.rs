@@ -40,6 +40,7 @@ fn stable_vehicle() -> PlanarVehicle {
         cg_from_nose_m: 0.18,
         pitch_inertia_kgm2: 4.0e-4,
         reference_area_m2: std::f64::consts::PI * 0.0125 * 0.0125,
+        launch_angle_rad: 0.0,
     }
 }
 
@@ -51,6 +52,7 @@ fn finless_vehicle() -> PlanarVehicle {
         cg_from_nose_m: 0.18,
         pitch_inertia_kgm2: 4.0e-4,
         reference_area_m2: std::f64::consts::PI * 0.0125 * 0.0125,
+        launch_angle_rad: 0.0,
     }
 }
 

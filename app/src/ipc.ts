@@ -2,6 +2,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   Design,
+  DispersionRequest,
+  DispersionSummary,
   EvidenceReport,
   MotorInfo,
   RepairResult,
@@ -31,4 +33,11 @@ export function fetchReview(targetApogeeM: number): Promise<ReviewReport> {
 
 export function solveReview(targetApogeeM: number): Promise<RepairResult> {
   return invoke<RepairResult>("solve_review", { targetApogeeM });
+}
+
+export function runDispersion(
+  design: Design,
+  request: DispersionRequest,
+): Promise<DispersionSummary> {
+  return invoke<DispersionSummary>("run_dispersion", { design, request });
 }

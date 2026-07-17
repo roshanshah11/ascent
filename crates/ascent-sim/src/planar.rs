@@ -85,6 +85,12 @@ pub struct PlanarVehicle {
     pub pitch_inertia_kgm2: f64,
     /// Aerodynamic reference area (body cross-section), m².
     pub reference_area_m2: f64,
+    /// Rail/launcher tilt from vertical, radians (+ tilts toward +x). The
+    /// rail run itself is still integrated vertically (short rails, small
+    /// angles); free flight starts at this pitch, so thrust tilt and
+    /// weathercocking see the full effect. Defaults to 0 (vertical).
+    #[serde(default)]
+    pub launch_angle_rad: f64,
 }
 
 impl PlanarVehicle {
@@ -258,6 +264,7 @@ pub fn simulate_planar(
     let burn_time = motor.burn_time();
     let mut t = 0.0;
     let mut s: State = [0.0; 6];
+    s[4] = vehicle.launch_angle_rad;
     let mut phase = Phase::Pad;
     let mut steps: u64 = 0;
     let mut max_velocity: f64 = 0.0;

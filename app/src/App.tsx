@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from "react";
+import DispersionView from "./components/DispersionView";
 import EvidenceDrawer from "./components/EvidenceDrawer";
 import FlightMode from "./components/FlightMode";
 import Inspector from "./components/Inspector";
@@ -158,11 +159,14 @@ export default function App() {
       {error && <div style={{ color: "#c74b3c", marginBottom: 12 }}>{error}</div>}
 
       {mode === "design" ? (
-        <div style={{ display: "flex", gap: 32 }}>
-          <Viewport design={design} />
-          <Inspector design={design} onChange={edit} />
-          <MotorSelector motors={motors} design={design} onChange={edit} />
-        </div>
+        <>
+          <div style={{ display: "flex", gap: 32 }}>
+            <Viewport design={design} />
+            <Inspector design={design} onChange={edit} />
+            <MotorSelector motors={motors} design={design} onChange={edit} />
+          </div>
+          <DispersionView design={design} />
+        </>
       ) : mode === "flight" ? (
         record && <FlightMode record={record} />
       ) : (

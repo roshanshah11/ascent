@@ -117,3 +117,40 @@ export interface RepairResult {
   achieved_apogee_m: number;
   diff: DiffEntry[];
 }
+
+export type VaryParam =
+  | "thrust_pct"
+  | "cd_pct"
+  | "wind_speed_ms"
+  | "launch_angle_deg"
+  | "mass_g";
+
+export interface Variation {
+  param: VaryParam;
+  sigma: number;
+}
+
+export interface DispersionRequest {
+  seed: number;
+  samples: number;
+  vary: Variation[];
+  base_wind_ms: number;
+}
+
+export interface CompactRun {
+  apogee_m: number;
+  landing_range_m: number;
+  max_aoa_deg: number;
+}
+
+export interface DispersionSummary {
+  seed: number;
+  samples: number;
+  vary: Variation[];
+  apogee_p5_m: number;
+  apogee_p50_m: number;
+  apogee_p95_m: number;
+  landing_mean_m: number;
+  landing_ellipse: { a_m: number; b_m: number; bearing_deg: number };
+  runs: CompactRun[];
+}
