@@ -17,12 +17,12 @@ Companion specs: `PROJECT_SPEC.md` (9-day slice), `IDEA_SPEC.md` (full idea).
 - [x] **Day 4 — parametric vehicle + stability** *(DONE 2026-07-17, commit `7632645`)*
   `ascent-aero` crate: nose/body/fins/point-mass model, time-varying CG, Barrowman CP (techdoc), stability in calibers, rule-pack constraint engine (plan defaults until A1 lands; A2 fixture adds exact Alpha III pins).
   Exit passed: span/payload/tail-mass edits produce correct tested stability changes; constraint pass/fail tested at rule boundaries. 57 tests total.
-- [ ] **Day 5 — app shell + design mode** (Tauri + React)
-  Viewport, inspector, motor selector; design revision + dirty/stale/running/current states.
-  Exit: alter the reference rocket without touching JSON.
-- [ ] **Day 6 — flight mode**
-  Animated launch playback, linked telemetry plots, event timeline, summary cards + warnings.
-  Exit: full launch story works offline, one click.
+- [x] **Day 5 — app shell + design mode** *(DONE 2026-07-17, commit `4b574d7`)*
+  Tauri v2 + React/Vite: SVG viewport, part inspector, motor selector; run-state machine (dirty/running/current/stale incl. edit-while-running) as a pure tested module; coarse IPC only.
+  Exit passed: every Design field editable through UI; state transitions unit-tested (9 vitest); headless summary pinned unchanged.
+- [x] **Day 6 — flight mode** *(DONE 2026-07-17, commit `4b574d7`)*
+  Animated playback (8x compression, scrubber), linked altitude/velocity plots with cursor, progressive event timeline, summary cards, derived warnings.
+  Exit passed: rendered exclusively from the stored RunRecord — zero sim calls during playback; playback engine pure + tested (9 vitest).
 - [ ] **Day 7 — Flight Review + target solver**
   IREC 10K profile, constraint panel, motor/ballast search, before/after diff.
   Exit: Ascent repairs one deliberately infeasible configuration.
@@ -34,6 +34,8 @@ Companion specs: `PROJECT_SPEC.md` (9-day slice), `IDEA_SPEC.md` (full idea).
   Exit: demo runs cold, twice, identically.
 
 ## Non-code (parallel track)
+
+- [ ] **Full UI redesign pass** (post-Jul 23, Roshan 2026-07-17: "this is its own software"): brainstorming session + design/3D skills. Current UI is a deliberately thin skin — core logic (run-state machine, playback, IPC types) is presentation-independent, swap freely.
 
 - [x] **OpenRocket golden fixture** *(DONE 2026-07-17 — Roshan exported; lives at `data/reference/openrocket-alpha3-c6.csv`)*
 - [ ] **Startup School 30-sec intro finalized** (due Jul 23) — skeleton exists; slot in one Ascent sentence.
