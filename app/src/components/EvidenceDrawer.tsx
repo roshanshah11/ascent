@@ -70,6 +70,43 @@ export default function EvidenceDrawer({ design }: { design: Design }) {
           <div>
             <b>External validation</b> {evidence.validation}
           </div>
+          <div>
+            <b>Credibility scorecard</b>{" "}
+            <span title="NASA-STD-7009-inspired evidence summary — not a certification">
+              (evidence and limits, docs/CREDIBILITY.md)
+            </span>
+            <ul style={{ margin: "4px 0 0 18px" }}>
+              {evidence.credibility.factors.map((f) => (
+                <li key={f.name}>
+                  {f.name} <b>{f.score}/4</b> — {f.basis}
+                </li>
+              ))}
+            </ul>
+            <div style={{ marginTop: 4, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {evidence.credibility.quantities.map((q) => (
+                <span
+                  key={q.quantity}
+                  title={q.regime.kind === "extrapolated" ? q.regime.reason : "within the evidence-backed regime"}
+                  style={{
+                    border: `1px solid ${q.regime.kind === "validated" ? "#3fb950" : "#e8a33d"}`,
+                    color: q.regime.kind === "validated" ? "#3fb950" : "#e8a33d",
+                    borderRadius: 10,
+                    padding: "1px 8px",
+                  }}
+                >
+                  {q.quantity}: {q.regime.kind}
+                </span>
+              ))}
+            </div>
+            {evidence.credibility.quantities
+              .filter((q) => q.regime.kind === "extrapolated")
+              .map((q) => (
+                <div key={q.quantity} style={{ color: "#e8a33d", marginTop: 2 }}>
+                  {q.quantity}:{" "}
+                  {q.regime.kind === "extrapolated" ? q.regime.reason : ""}
+                </div>
+              ))}
+          </div>
         </div>
       )}
     </details>

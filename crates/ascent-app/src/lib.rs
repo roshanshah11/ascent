@@ -3,12 +3,14 @@
 //! All physics stays in ascent-domain / ascent-sim; this crate only maps
 //! DTOs and downsamples the trajectory for playback.
 
+mod credibility;
 mod design;
 mod dispersion_ipc;
 mod evidence;
 mod project;
 mod review_ipc;
 
+pub use credibility::{Factor, QuantityFlag, Regime, Scorecard};
 pub use design::{run_design, Design, ImportedMotor, MotorInfo, RunRecord};
 pub use dispersion_ipc::DispersionRequest;
 pub use project::{from_toml, to_toml, Project};

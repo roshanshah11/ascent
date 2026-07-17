@@ -66,6 +66,26 @@ export interface ConvergenceInfo {
   converged: boolean;
 }
 
+export interface CredibilityFactor {
+  name: string;
+  score: number; // 0-4 per docs/CREDIBILITY.md
+  basis: string;
+}
+
+export type RegimeFlag =
+  | { kind: "validated" }
+  | { kind: "extrapolated"; reason: string };
+
+export interface QuantityFlag {
+  quantity: string;
+  regime: RegimeFlag;
+}
+
+export interface Scorecard {
+  factors: CredibilityFactor[];
+  quantities: QuantityFlag[];
+}
+
 export interface EvidenceReport {
   input_hash: string;
   engine: { id: string; version: string };
@@ -78,6 +98,7 @@ export interface EvidenceReport {
   };
   convergence: ConvergenceInfo;
   validation: string;
+  credibility: Scorecard;
 }
 
 export interface RuleCheck {

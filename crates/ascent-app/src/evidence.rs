@@ -5,6 +5,7 @@
 use ascent_sim::{convergence_report, ConvergenceReport, NativeEngine, SimConfig, SimEngine};
 use serde::{Deserialize, Serialize};
 
+use crate::credibility::{scorecard, Scorecard, ScorecardInputs};
 use crate::design::{build_flight, Design};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +36,9 @@ pub struct EvidenceReport {
     pub convergence: ConvergenceReport,
     /// External validation summary (Day 3, docs/EVIDENCE.md).
     pub validation: String,
+    /// NASA-7009-inspired factor scores + per-quantity regime flags
+    /// (v0.2 Step 7, contract in docs/CREDIBILITY.md).
+    pub credibility: Scorecard,
 }
 
 pub fn evidence_for(design: &Design) -> Result<EvidenceReport, String> {
@@ -43,6 +47,12 @@ pub fn evidence_for(design: &Design) -> Result<EvidenceReport, String> {
     let convergence = convergence_report(&rocket, &motor, &env, &config);
     let engine: &dyn SimEngine = &NativeEngine;
     let summary = engine.run(&rocket, &motor, &env, &config)?;
+
+    let credibility = scorecard(&ScorecardInputs {
+        max_velocity_ms: summary.max_velocity_ms,
+        converged: convergence.converged,
+        motor_user_imported: motor.provenance.to_string().contains("user-imported"),
+    });
 
     Ok(EvidenceReport {
         input_hash: summary.input_hash,
@@ -70,6 +80,7 @@ pub fn evidence_for(design: &Design) -> Result<EvidenceReport, String> {
         },
         convergence,
         validation: "Matched-config apogee within 1.4% and max velocity within 0.1% of an OpenRocket 24.12 export (docs/EVIDENCE.md)".into(),
+        credibility,
     })
 }
 
@@ -94,6 +105,20 @@ mod tests {
         assert_eq!(ev.engine.id, native.id());
         assert_eq!(ev.engine.version, native.version());
         assert!(!ev.engine.version.is_empty());
+    }
+
+    #[test]
+    fn evidence_carries_a_full_scorecard_for_the_reference_design() {
+        use crate::credibility::Regime;
+        let ev = evidence_for(&Design::reference()).unwrap();
+        assert_eq!(ev.credibility.factors.len(), 5, "docs/CREDIBILITY.md fixes five factors");
+        assert!(ev.credibility.factors.iter().all(|f| !f.basis.is_empty()));
+        // The reference bird is subsonic and converged: everything validated.
+        assert!(ev
+            .credibility
+            .quantities
+            .iter()
+            .all(|q| q.regime == Regime::Validated));
     }
 
     #[test]
