@@ -1,12 +1,17 @@
 pub mod atmosphere;
 pub mod engine;
 pub mod events;
+pub mod planar;
 pub mod rocket;
 pub mod sim;
 pub mod summary;
 
 pub use atmosphere::AtmosphereModel;
 pub use engine::{engines, NativeEngine, SimEngine};
+pub use planar::{
+    planar_convergence, simulate_planar, PlanarConvergence, PlanarSummary, PlanarVehicle,
+    WindLayer, WindProfile,
+};
 pub use events::{Event, EventKind};
 pub use rocket::{DragModel, Environment, Recovery, Rocket};
 pub use sim::{
