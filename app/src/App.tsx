@@ -49,6 +49,9 @@ export default function App() {
   // Undo/redo history lives in a ref: commands close over design snapshots,
   // so the ref never needs to trigger renders itself — setDesign does that.
   const historyRef = useRef<CommandHistory>(emptyHistory);
+  // Every design mutation and comparison request advances this generation.
+  // A completion may render only while it still describes the current design.
+  const comparisonGeneration = useRef(0);
   const [, bumpHistory] = useReducer((n: number) => n + 1, 0);
   const [recovery, setRecovery] = useState<Project | null>(null);
   // Latest state for the autosave interval, without re-arming the timer on
@@ -88,11 +91,16 @@ export default function App() {
     return <div style={{ padding: 24 }}>{error ?? "Loading reference design…"}</div>;
   }
 
+  const invalidateSpread = () => {
+    comparisonGeneration.current += 1;
+    setSpread(null);
+  };
+
   const edit = (next: Design) => {
     const r = pushCommand(historyRef.current, replaceDesign(design, next), design);
     historyRef.current = r.history;
     setDesign(r.design);
-    setSpread(null);
+    invalidateSpread();
     bumpHistory();
     dispatch({ type: "EDIT" });
   };
@@ -103,6 +111,7 @@ export default function App() {
     const r = undo(historyRef.current, design);
     historyRef.current = r.history;
     setDesign(r.design);
+    invalidateSpread();
     bumpHistory();
     dispatch({ type: "EDIT" });
   };
@@ -112,6 +121,7 @@ export default function App() {
     const r = redo(historyRef.current, design);
     historyRef.current = r.history;
     setDesign(r.design);
+    invalidateSpread();
     bumpHistory();
     dispatch({ type: "EDIT" });
   };
@@ -131,11 +141,14 @@ export default function App() {
   };
 
   const compare = async () => {
+    const generation = ++comparisonGeneration.current;
+    setSpread(null);
     setError(null);
     try {
-      setSpread(await runSpread(design));
+      const result = await runSpread(design);
+      if (generation === comparisonGeneration.current) setSpread(result);
     } catch (e) {
-      setError(String(e));
+      if (generation === comparisonGeneration.current) setError(String(e));
     }
   };
 
@@ -143,7 +156,7 @@ export default function App() {
   const reset = async () => {
     setError(null);
     setRecord(null);
-    setSpread(null);
+    invalidateSpread();
     setMode("design");
     historyRef.current = emptyHistory;
     bumpHistory();
