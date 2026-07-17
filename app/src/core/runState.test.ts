@@ -74,3 +74,26 @@ describe("run-state machine", () => {
     expect(s.state).toBe("dirty");
   });
 });
+
+describe("demo reset", () => {
+  it("reset from any state returns to the initial dirty state", () => {
+    for (const prefix of [
+      [],
+      [{ type: "RUN_START" }],
+      [{ type: "RUN_START" }, { type: "RUN_SUCCESS" }],
+      [{ type: "RUN_START" }, { type: "EDIT" }, { type: "RUN_SUCCESS" }],
+    ] as RunAction[][]) {
+      const s = replay([...prefix, { type: "RESET" }]);
+      expect(s).toEqual(initialRunStatus);
+    }
+  });
+
+  it("a run completing after reset is ignored as a ghost", () => {
+    const s = replay([
+      { type: "RUN_START" },
+      { type: "RESET" },
+      { type: "RUN_SUCCESS" },
+    ]);
+    expect(s.state).toBe("dirty");
+  });
+});

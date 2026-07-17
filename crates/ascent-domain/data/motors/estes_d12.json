@@ -1,0 +1,22 @@
+{
+  "designation": "D12",
+  "manufacturer": "Estes Industries",
+  "provenance": {
+    "source": "ThrustCurve.org API v1, simfile 5f4294d20002e900000004ea (source: user; no cert curve returned by API)",
+    "cert_org": "National Association of Rocketry",
+    "motor_id": "5f4294d20002310000000020",
+    "info_url": "https://www.thrustcurve.org/simfiles/5f4294d20002e900000004ea/",
+    "license": "ThrustCurve user data; API returned no license value; redistribution per ThrustCurve terms",
+    "retrieved": "2026-07-17",
+    "format": "RASP samples via download.json; certified motor metadata came from search.json"
+  },
+  "diameter_mm": 24.0,
+  "length_mm": 70.0,
+  "total_mass_kg": 0.044,
+  "propellant_mass_kg": 0.0211,
+  "expected_total_impulse_ns": 16.84,
+  "expected_burn_time_s": 1.65,
+  "expected_avg_thrust_n": 10.21,
+  "expected_max_thrust_n": 29.73,
+  "thrust_curve": [[0.049,2.569],[0.116,9.369],[0.184,17.275],[0.237,24.258],[0.282,29.73],[0.297,27.01],[0.311,22.589],[0.322,17.99],[0.348,14.126],[0.386,12.099],[0.442,10.808],[0.546,9.876],[0.718,9.306],[0.879,9.105],[1.066,8.901],[1.257,8.698],[1.436,8.31],[1.59,8.294],[1.612,4.613],[1.65,0.0]]
+}

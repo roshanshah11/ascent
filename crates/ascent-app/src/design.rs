@@ -8,10 +8,11 @@ use ascent_sim::{
 use serde::{Deserialize, Serialize};
 
 const C6_JSON: &str = include_str!("../../ascent-domain/data/motors/estes_c6.json");
+const B6_JSON: &str = include_str!("../../ascent-domain/data/motors/estes_b6.json");
+const D12_JSON: &str = include_str!("../../ascent-domain/data/motors/estes_d12.json");
 
-/// Motors bundled with the app (provenance-preserved JSON). More arrive via
-/// Codex task A4; adding one = adding an include_str! entry here.
-const MOTOR_SOURCES: &[&str] = &[C6_JSON];
+/// Motors bundled with the app (provenance-preserved JSON, Codex task A4).
+pub const MOTOR_SOURCES: &[&str] = &[C6_JSON, B6_JSON, D12_JSON];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChuteSpec {
@@ -112,7 +113,9 @@ pub struct RunRecord {
 /// Cap playback samples sent over IPC; full fidelity stays in the summary.
 const MAX_PLAYBACK_SAMPLES: usize = 2_000;
 
-pub fn run_design(design: &Design) -> Result<RunRecord, String> {
+/// Validate a Design and map it onto the sim-layer types. Shared by the
+/// run command and the evidence command so they can never disagree.
+pub fn build_flight(design: &Design) -> Result<(Rocket, Motor, Environment), String> {
     if design.dry_mass_g <= 0.0 {
         return Err("dry mass must be positive".into());
     }
@@ -143,6 +146,11 @@ pub fn run_design(design: &Design) -> Result<RunRecord, String> {
         atmosphere: AtmosphereModel::Standard,
         rail_length_m: design.rail_length_m,
     };
+    Ok((rocket, motor, env))
+}
+
+pub fn run_design(design: &Design) -> Result<RunRecord, String> {
+    let (rocket, motor, env) = build_flight(design)?;
     let config = SimConfig::default();
     let result = simulate_vertical(&rocket, &motor, &env, &config);
     let summary = SimSummary::from_result(&result, &rocket, &motor, &env, &config);
@@ -225,8 +233,24 @@ mod tests {
     }
 
     #[test]
-    fn motor_list_contains_c6() {
+    fn motor_list_contains_all_bundled_motors() {
         let motors = bundled_motors();
-        assert!(motors.iter().any(|m| m.designation == "C6"));
+        for designation in ["C6", "B6", "D12"] {
+            assert!(
+                motors.iter().any(|m| m.designation == designation),
+                "missing bundled motor {designation}"
+            );
+        }
+        assert_eq!(motors.len(), MOTOR_SOURCES.len(), "a bundled motor failed to parse");
+    }
+
+    #[test]
+    fn every_bundled_motor_flies_the_reference_airframe() {
+        for designation in ["B6", "C6", "D12"] {
+            let mut d = Design::reference();
+            d.motor_designation = designation.into();
+            let record = run_design(&d).unwrap();
+            assert!(record.summary.apogee_m > 50.0, "{designation} should lift off");
+        }
     }
 }

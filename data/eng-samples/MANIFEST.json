@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "format_source": "https://www.thrustcurve.org/info/raspformat.html",
+  "samples": [
+    {"file":"estes_b6_cert.eng","origin":"ThrustCurve API v1 simfile 5f4294d20002e90000000414, source=cert","license":"ThrustCurve certification data; redistribution per ThrustCurve terms","quirks":["leading comment","manufacturer abbreviation E","terminal zero"]},
+    {"file":"estes_c6_cert.eng","origin":"ThrustCurve API v1 simfile 69eb2379c7d63000021d8c29, source=cert","license":"ThrustCurve certification data; redistribution per ThrustCurve terms","quirks":["multiple comments","leading-dot kilograms","hyphenated delays","terminal zero"]},
+    {"file":"openrocket_d10.eng","origin":"OpenRocket core test resource file/motor/test1.eng","license":"GPL-3.0-or-later, OpenRocket repository","quirks":["no comments","high-precision propellant mass","manufacturer abbreviation AT","terminal zero"]},
+    {"file":"estes_multi_entry.eng","origin":"Verbatim first two complete entries from https://www.thrustcurve.org/outbox/set/Estes.eng","license":"ThrustCurve certification data; redistribution per ThrustCurve terms","quirks":["multiple motors per file","comment separator","per-entry terminal zero"],"assembly_note":"Extracted as a smaller corpus file while preserving complete upstream entries."},
+    {"file":"estes_d12_missing_terminal_zero.eng","origin":"Derived negative fixture from ThrustCurve API v1 simfile 5f4294d20002e900000004ea, source=user","license":"ThrustCurve user data; API returned no license value; redistribution per ThrustCurve terms","quirks":["missing final zero","manufacturer token Estes"],"derivation_note":"The upstream final pair 1.650 0 was deliberately omitted to test parser rejection; this is not represented as an unmodified upstream file."}
+  ]
+}

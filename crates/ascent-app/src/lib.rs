@@ -4,9 +4,11 @@
 //! DTOs and downsamples the trajectory for playback.
 
 mod design;
+mod evidence;
 mod review_ipc;
 
 pub use design::{run_design, Design, MotorInfo, RunRecord};
+pub use evidence::{evidence_for, EvidenceReport};
 pub use review_ipc::{repair as review_repair, report as review_report, ReviewReport};
 
 #[tauri::command]
@@ -22,6 +24,11 @@ fn list_motors() -> Vec<MotorInfo> {
 #[tauri::command]
 fn run_simulation(design: Design) -> Result<RunRecord, String> {
     run_design(&design)
+}
+
+#[tauri::command]
+fn run_evidence(design: Design) -> Result<EvidenceReport, String> {
+    evidence_for(&design)
 }
 
 #[tauri::command]
@@ -41,6 +48,7 @@ pub fn run() {
             reference_design,
             list_motors,
             run_simulation,
+            run_evidence,
             flight_review,
             solve_review
         ])

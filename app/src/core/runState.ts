@@ -20,7 +20,8 @@ export type RunAction =
   | { type: "EDIT" }
   | { type: "RUN_START" }
   | { type: "RUN_SUCCESS" }
-  | { type: "RUN_FAIL" };
+  | { type: "RUN_FAIL" }
+  | { type: "RESET" };
 
 export const initialRunStatus: RunStatus = {
   state: "dirty", // no result yet: the design is unproven
@@ -46,5 +47,9 @@ export function reduceRunStatus(s: RunStatus, a: RunAction): RunStatus {
     case "RUN_FAIL":
       if (s.state !== "running") return s;
       return { state: "dirty", editedWhileRunning: false };
+    case "RESET":
+      // Demo reset: back to the pristine no-result state. A run still in
+      // flight will complete as a ghost and be ignored (state !== running).
+      return { ...initialRunStatus };
   }
 }

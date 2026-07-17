@@ -7,7 +7,6 @@ use ascent_domain::Motor;
 use ascent_review::{evaluate, solve, ChuteConfig, Repair, Review, ReviewDesign};
 use serde::{Deserialize, Serialize};
 
-const C6_JSON: &str = include_str!("../../ascent-domain/data/motors/estes_c6.json");
 const IREC_JSON: &str = include_str!("../../../data/rules/irec-2026.json");
 
 fn rules() -> Result<RulePack, String> {
@@ -15,7 +14,7 @@ fn rules() -> Result<RulePack, String> {
 }
 
 fn motors() -> Vec<Motor> {
-    [C6_JSON]
+    crate::design::MOTOR_SOURCES
         .iter()
         .filter_map(|s| Motor::from_json(s).ok())
         .collect()

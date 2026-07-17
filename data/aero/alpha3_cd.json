@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0.0",
+  "model_id": "alpha3_class_openrocket_24_12_narrow_demo_table",
+  "quantity": "zero_lift_drag_coefficient",
+  "reference_area": "frontal area, 25 mm diameter (4.909 cm^2 in source export)",
+  "interpolation": "piecewise_linear; hold final value above 0.5 only if caller explicitly accepts out-of-range warning",
+  "mach_cd": [
+    {"mach": 0.0, "cd": 0.875, "source": "OpenRocket 24.12 export data/reference/openrocket-alpha3-c6.csv, t=0 static row", "validity": "launch-static value for bundled 25 mm simple-model-rocket reference; not a coast value"},
+    {"mach": 0.1, "cd": 0.618, "source": "OpenRocket 24.12 export data/reference/openrocket-alpha3-c6.csv, ascending row at Mach 0.100", "validity": "bundled 25 mm simple-model-rocket, low AoA, powered ascent"},
+    {"mach": 0.2, "cd": 0.623, "source": "OpenRocket 24.12 export data/reference/openrocket-alpha3-c6.csv, ascending row at Mach 0.200", "validity": "bundled 25 mm simple-model-rocket, low AoA, powered ascent"},
+    {"mach": 0.3, "cd": 0.632, "source": "OpenRocket 24.12 export data/reference/openrocket-alpha3-c6.csv, highest ascending sample at Mach 0.281; held to requested 0.3 breakpoint", "validity": "hold-last extrapolation from source data; not validated above Mach 0.281"},
+    {"mach": 0.4, "cd": 0.632, "source": "Ascent v0.1 declared hold-last policy using OpenRocket 24.12 export's Mach-0.281 Cd 0.632", "validity": "explicitly unvalidated extrapolation; warn in UI and do not use as transonic evidence"},
+    {"mach": 0.5, "cd": 0.632, "source": "Ascent v0.1 declared hold-last policy using OpenRocket 24.12 export's Mach-0.281 Cd 0.632", "validity": "explicitly unvalidated extrapolation; table ends before transonic regime"}
+  ],
+  "sources": [
+    {"name": "OpenRocket 24.12 exported simulation table", "path": "data/reference/openrocket-alpha3-c6.csv", "note": "Bundled 'A simple model rocket', not the retail Estes Alpha III; 25 mm diameter and C6 motor class."},
+    {"name": "Ascent Evidence", "path": "docs/EVIDENCE.md", "note": "Documents the export's static Cd about 0.87 and coast Cd about 0.63."}
+  ],
+  "validity": {
+    "mach_range": [0.0, 0.4],
+    "angle_of_attack": "near zero",
+    "vehicle": "OpenRocket bundled 25 mm simple model rocket; Alpha III-class only, not a retail-kit measurement",
+    "exclusions": ["transonic or supersonic flight", "high angle of attack", "roughness, paint, or launch-lug changes", "separated stages"]
+  }
+}

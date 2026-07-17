@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useState } from "react";
+import EvidenceDrawer from "./components/EvidenceDrawer";
 import FlightMode from "./components/FlightMode";
 import Inspector from "./components/Inspector";
 import MotorSelector from "./components/MotorSelector";
@@ -51,6 +52,19 @@ export default function App() {
     }
   };
 
+  // Demo reset: pristine reference design, no record, back to design mode.
+  const reset = async () => {
+    setError(null);
+    setRecord(null);
+    setMode("design");
+    dispatch({ type: "RESET" });
+    try {
+      setDesign(await fetchReferenceDesign());
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   const badge = STATE_BADGE[status.state];
 
   return (
@@ -70,6 +84,9 @@ export default function App() {
         </span>
         <button onClick={run} disabled={status.state === "running"}>
           Run simulation
+        </button>
+        <button onClick={reset} title="Restore the reference design and clear results">
+          Reset demo
         </button>
         <nav style={{ marginLeft: "auto" }}>
           <button onClick={() => setMode("design")} disabled={mode === "design"}>
@@ -104,6 +121,7 @@ export default function App() {
       {record && (
         <footer style={{ marginTop: 20, fontSize: 11, color: "#9aa1ab" }}>
           run {record.summary.input_hash.slice(0, 12)} · deterministic · offline
+          <EvidenceDrawer design={record.design} />
         </footer>
       )}
     </div>

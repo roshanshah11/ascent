@@ -1,6 +1,13 @@
 // The only file that touches the Tauri bridge. Coarse calls only.
 import { invoke } from "@tauri-apps/api/core";
-import type { Design, MotorInfo, RepairResult, ReviewReport, RunRecord } from "./core/types";
+import type {
+  Design,
+  EvidenceReport,
+  MotorInfo,
+  RepairResult,
+  ReviewReport,
+  RunRecord,
+} from "./core/types";
 
 export function fetchReferenceDesign(): Promise<Design> {
   return invoke<Design>("reference_design");
@@ -12,6 +19,10 @@ export function fetchMotors(): Promise<MotorInfo[]> {
 
 export function runSimulation(design: Design): Promise<RunRecord> {
   return invoke<RunRecord>("run_simulation", { design });
+}
+
+export function fetchEvidence(design: Design): Promise<EvidenceReport> {
+  return invoke<EvidenceReport>("run_evidence", { design });
 }
 
 export function fetchReview(targetApogeeM: number): Promise<ReviewReport> {

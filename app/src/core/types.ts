@@ -58,6 +58,28 @@ export interface RunRecord {
   samples: PlaybackSample[];
 }
 
+export interface ConvergenceInfo {
+  dt_s: number;
+  apogee_m: [number, number, number];
+  apogee_delta_m: number;
+  apogee_delta_fine_m: number;
+  converged: boolean;
+}
+
+export interface EvidenceReport {
+  input_hash: string;
+  engine: string;
+  models: string[];
+  assumptions: string[];
+  motor: {
+    designation: string;
+    manufacturer: string;
+    provenance: unknown;
+  };
+  convergence: ConvergenceInfo;
+  validation: string;
+}
+
 export interface RuleCheck {
   rule_id: string;
   description: string;
