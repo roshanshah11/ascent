@@ -5,6 +5,7 @@ import FlightMode from "./components/FlightMode";
 import Inspector from "./components/Inspector";
 import MotorSelector from "./components/MotorSelector";
 import ReviewPanel from "./components/ReviewPanel";
+import SpreadPanel from "./components/SpreadPanel";
 import Viewport from "./components/Viewport";
 import {
   canRedo,
@@ -17,7 +18,7 @@ import {
   type CommandHistory,
 } from "./core/commands";
 import { initialRunStatus, reduceRunStatus } from "./core/runState";
-import type { Design, MotorInfo, Project, RunRecord } from "./core/types";
+import type { Design, MotorInfo, Project, RunRecord, SpreadResult } from "./core/types";
 import {
   autosaveProject,
   checkRecovery,
@@ -25,6 +26,7 @@ import {
   fetchMotors,
   fetchReferenceDesign,
   runSimulation,
+  runSpread,
 } from "./ipc";
 
 const STATE_BADGE: Record<string, { label: string; color: string }> = {
@@ -38,6 +40,7 @@ export default function App() {
   const [design, setDesign] = useState<Design | null>(null);
   const [motors, setMotors] = useState<MotorInfo[]>([]);
   const [record, setRecord] = useState<RunRecord | null>(null);
+  const [spread, setSpread] = useState<SpreadResult | null>(null);
   const [status, dispatch] = useReducer(reduceRunStatus, initialRunStatus);
   const [mode, setMode] = useState<"design" | "flight" | "review">("design");
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +90,7 @@ export default function App() {
     const r = pushCommand(historyRef.current, replaceDesign(design, next), design);
     historyRef.current = r.history;
     setDesign(r.design);
+    setSpread(null);
     bumpHistory();
     dispatch({ type: "EDIT" });
   };
@@ -124,10 +128,20 @@ export default function App() {
     }
   };
 
+  const compare = async () => {
+    setError(null);
+    try {
+      setSpread(await runSpread(design));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   // Demo reset: pristine reference design, no record, back to design mode.
   const reset = async () => {
     setError(null);
     setRecord(null);
+    setSpread(null);
     setMode("design");
     historyRef.current = emptyHistory;
     bumpHistory();
@@ -184,6 +198,7 @@ export default function App() {
         <button onClick={run} disabled={status.state === "running"}>
           Run simulation
         </button>
+        <button onClick={compare}>Compare engines</button>
         <button onClick={reset} title="Restore the reference design and clear results">
           Reset demo
         </button>
@@ -246,6 +261,8 @@ export default function App() {
       ) : (
         <ReviewPanel />
       )}
+
+      {spread && <SpreadPanel spread={spread} />}
 
       {record && (
         <footer style={{ marginTop: 20, fontSize: 11, color: "#9aa1ab" }}>

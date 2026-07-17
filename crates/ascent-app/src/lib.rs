@@ -11,7 +11,7 @@ mod project;
 mod review_ipc;
 
 pub use credibility::{Factor, QuantityFlag, Regime, Scorecard};
-pub use design::{run_design, Design, ImportedMotor, MotorInfo, RunRecord};
+pub use design::{run_design, Design, ImportedMotor, MotorInfo, RunRecord, SpreadResult};
 pub use dispersion_ipc::DispersionRequest;
 pub use project::{from_toml, to_toml, Project};
 pub use evidence::{evidence_for, EvidenceReport};
@@ -30,6 +30,11 @@ fn list_motors() -> Vec<MotorInfo> {
 #[tauri::command]
 fn run_simulation(design: Design) -> Result<RunRecord, String> {
     run_design(&design)
+}
+
+#[tauri::command]
+fn run_spread(design: Design) -> Result<SpreadResult, String> {
+    design::run_spread(&design)
 }
 
 #[tauri::command]
@@ -93,6 +98,7 @@ pub fn run() {
             reference_design,
             list_motors,
             run_simulation,
+            run_spread,
             import_motor_file,
             run_evidence,
             run_dispersion,

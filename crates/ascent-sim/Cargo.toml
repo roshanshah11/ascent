@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = []
+bridge-rocketpy = []
+
 [dependencies]
 ascent-domain = { path = "../ascent-domain" }
 serde.workspace = true

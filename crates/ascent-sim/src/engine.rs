@@ -49,7 +49,16 @@ impl SimEngine for NativeEngine {
 /// Every engine this build knows about. Bridge engines (RocketPy, OpenRocket)
 /// append here in later steps; callers select by `id()`.
 pub fn engines() -> Vec<Box<dyn SimEngine>> {
-    vec![Box::new(NativeEngine)]
+    #[cfg(feature = "bridge-rocketpy")]
+    {
+        let mut engines: Vec<Box<dyn SimEngine>> = vec![Box::new(NativeEngine)];
+        engines.push(Box::new(crate::rocketpy_bridge::RocketPyEngine::from_environment()));
+        engines
+    }
+    #[cfg(not(feature = "bridge-rocketpy"))]
+    {
+        vec![Box::new(NativeEngine)]
+    }
 }
 
 #[cfg(test)]

@@ -7,6 +7,10 @@ edition = "2021"
 name = "ascent_app"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = []
+bridge-rocketpy = ["ascent-sim/bridge-rocketpy"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
