@@ -26,9 +26,9 @@ Companion specs: `PROJECT_SPEC.md` (9-day slice), `IDEA_SPEC.md` (full idea).
 - [x] **Day 7 — Flight Review + target solver** *(DONE 2026-07-17)*
   `ascent-review` crate + Flight Review UI mode: constraint panel bound to the cited IREC pack, deterministic motor+ballast solver, before/after diff.
   Exit passed: solver repairs the 350 m-target miss (~12 g ballast) inside a real stability window; deterministic across runs; diff complete. 88 tests total.
-- [ ] **Day 8 — provenance, tests, polish** (+copilot stretch if 1–7 done)
-  Evidence drawer, input hash, model/version display; fixture regression + e2e happy path; failure-state UI, demo reset.
-  Exit: clean restart reproduces the same result without network.
+- [x] **Day 8 — provenance, tests, polish** *(DONE 2026-07-17, commit `9e3c816`)*
+  Evidence drawer (hash, models, assumptions, motor provenance, live convergence check), golden regression pin (summary frozen to 1e-9), demo-reset button + RESET state transition, Codex A2–A6 wired (Barrowman fixture cross-check, B6/D12 motors, drag note, demo script, .eng corpus).
+  Exit passed: golden pin + determinism tests prove a clean restart reproduces the identical summary; all data is embedded via include_str — zero network. 98 tests green (78 Rust + 20 vitest).
 - [ ] **Day 9 — demo hardening**
   Backup video, 90-second script rehearsed, dependency/data freeze, demo-blocking fixes only.
   Exit: demo runs cold, twice, identically.
