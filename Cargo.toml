@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/ascent-domain", "crates/ascent-sim"]
+members = ["crates/ascent-domain", "crates/ascent-sim", "crates/ascent-aero"]
 
 [workspace.package]
 version = "0.1.0"
