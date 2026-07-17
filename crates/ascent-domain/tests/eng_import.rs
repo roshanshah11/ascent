@@ -1,5 +1,6 @@
 use ascent_domain::eng_import::{parse_eng, EngImportError};
 use serde_json::json;
+use std::{collections::BTreeSet, fs};
 
 const MANIFEST: &str = include_str!("../../../data/eng-samples/MANIFEST.json");
 
@@ -39,6 +40,41 @@ fn manifest_lists_all_five_samples() {
     ] {
         assert!(files.contains(&expected), "manifest missing {expected}");
     }
+}
+
+#[test]
+fn manifest_and_physical_eng_corpus_have_exactly_the_same_files() {
+    let manifest: serde_json::Value = serde_json::from_str(MANIFEST).unwrap();
+    let manifest_files: BTreeSet<String> = manifest["samples"]
+        .as_array()
+        .expect("manifest samples must be an array")
+        .iter()
+        .map(|sample| {
+            sample["file"]
+                .as_str()
+                .expect("manifest sample must name a file")
+                .to_owned()
+        })
+        .collect();
+    let corpus_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("data/eng-samples");
+    let physical_files: BTreeSet<String> = fs::read_dir(&corpus_dir)
+        .expect("the corpus directory must be readable")
+        .map(|entry| entry.expect("corpus directory entries must be readable").path())
+        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("eng"))
+        .map(|path| {
+            path.file_name()
+                .expect(".eng file must have a name")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+
+    assert_eq!(
+        physical_files, manifest_files,
+        "MANIFEST.json must name every and only physical .eng corpus fixture"
+    );
 }
 
 #[test]
@@ -150,6 +186,91 @@ fn malformed_sample_times_and_thrusts_report_their_source_lines() {
             "C6 18 70 0-3-5-7 .0108 .0231 E\n0.1 5\n0.2 0\nB6 18 70 0 .0056 .0156 E\n0.1 4\n0.2 0\n",
             4,
             "separating comment",
+        ),
+    ];
+
+    for (name, source, expected_line, expected_message) in cases {
+        let err = parse_eng(source, &json!({})).expect_err(name);
+        match err {
+            EngImportError::Malformed { line, message } => {
+                assert_eq!(line, expected_line, "{name} line");
+                assert!(
+                    message.contains(expected_message),
+                    "{name} message should contain '{expected_message}', got: {message}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn malformed_header_numbers_and_negative_thrust_report_source_lines() {
+    let cases = [
+        (
+            "non-numeric diameter",
+            "C6 not-a-number 70 0-3-5-7 .0108 .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "invalid diameter_mm",
+        ),
+        (
+            "non-finite diameter",
+            "C6 NaN 70 0-3-5-7 .0108 .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "finite diameter_mm",
+        ),
+        (
+            "non-finite length",
+            "C6 18 NaN 0-3-5-7 .0108 .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "finite length_mm",
+        ),
+        (
+            "non-finite propellant mass",
+            "C6 18 70 0-3-5-7 NaN .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "finite propellant_kg",
+        ),
+        (
+            "non-finite loaded mass",
+            "C6 18 70 0-3-5-7 .0108 NaN E\n0.1 5\n0.2 0\n",
+            1,
+            "finite loaded_mass_kg",
+        ),
+        (
+            "nonpositive diameter",
+            "C6 0 70 0-3-5-7 .0108 .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "positive diameter_mm",
+        ),
+        (
+            "nonpositive length",
+            "C6 18 -70 0-3-5-7 .0108 .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "positive length_mm",
+        ),
+        (
+            "nonpositive propellant mass",
+            "C6 18 70 0-3-5-7 0 .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "positive propellant_kg",
+        ),
+        (
+            "nonpositive loaded mass",
+            "C6 18 70 0-3-5-7 .0108 0 E\n0.1 5\n0.2 0\n",
+            1,
+            "positive loaded_mass_kg",
+        ),
+        (
+            "propellant exceeding loaded mass",
+            "C6 18 70 0-3-5-7 .03 .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "exceeds loaded_mass_kg",
+        ),
+        (
+            "negative thrust",
+            "C6 18 70 0-3-5-7 .0108 .0231 E\n0.1 -1\n0.2 0\n",
+            2,
+            "negative thrust_n",
         ),
     ];
 

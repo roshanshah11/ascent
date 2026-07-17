@@ -21,6 +21,29 @@ fn malformed(line: usize, message: impl Into<String>) -> EngImportError {
     }
 }
 
+fn parse_positive_header_number(
+    line: usize,
+    field: &str,
+    raw: &str,
+) -> Result<f64, EngImportError> {
+    let value: f64 = raw
+        .parse()
+        .map_err(|_| malformed(line, format!("invalid {field} '{raw}'")))?;
+    if !value.is_finite() {
+        return Err(malformed(
+            line,
+            format!("non-finite {field} '{raw}'"),
+        ));
+    }
+    if value <= 0.0 {
+        return Err(malformed(
+            line,
+            format!("nonpositive {field} '{raw}'"),
+        ));
+    }
+    Ok(value)
+}
+
 /// Parse RASP `.eng` text into one or more motors.
 ///
 /// A file may contain multiple motor entries separated by comment lines.
@@ -49,19 +72,20 @@ pub fn parse_eng(text: &str, provenance: &Value) -> Result<Vec<Motor>, EngImport
             ));
         }
         let designation = fields[0].to_string();
-        let diameter_mm: f64 = fields[1]
-            .parse()
-            .map_err(|_| malformed(line_no, format!("invalid diameter_mm '{}'", fields[1])))?;
-        let length_mm: f64 = fields[2]
-            .parse()
-            .map_err(|_| malformed(line_no, format!("invalid length_mm '{}'", fields[2])))?;
+        let diameter_mm = parse_positive_header_number(line_no, "diameter_mm", fields[1])?;
+        let length_mm = parse_positive_header_number(line_no, "length_mm", fields[2])?;
         // fields[3] is the delay list (e.g. "0-3-5-7"); not modeled on Motor.
-        let propellant_mass_kg: f64 = fields[4]
-            .parse()
-            .map_err(|_| malformed(line_no, format!("invalid propellant_kg '{}'", fields[4])))?;
-        let total_mass_kg: f64 = fields[5]
-            .parse()
-            .map_err(|_| malformed(line_no, format!("invalid loaded_mass_kg '{}'", fields[5])))?;
+        let propellant_mass_kg =
+            parse_positive_header_number(line_no, "propellant_kg", fields[4])?;
+        let total_mass_kg = parse_positive_header_number(line_no, "loaded_mass_kg", fields[5])?;
+        if propellant_mass_kg > total_mass_kg {
+            return Err(malformed(
+                line_no,
+                format!(
+                    "propellant_kg {propellant_mass_kg} exceeds loaded_mass_kg {total_mass_kg}"
+                ),
+            ));
+        }
         let manufacturer = fields[6].to_string();
 
         i += 1;
@@ -104,6 +128,12 @@ pub fn parse_eng(text: &str, provenance: &Value) -> Result<Vec<Motor>, EngImport
                 return Err(malformed(
                     data_line_no,
                     format!("non-finite thrust_n '{}'", data_fields[1]),
+                ));
+            }
+            if thrust < 0.0 {
+                return Err(malformed(
+                    data_line_no,
+                    format!("negative thrust_n '{}'", data_fields[1]),
                 ));
             }
             if thrust_curve.is_empty() && t <= 0.0 {
