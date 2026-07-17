@@ -5,6 +5,7 @@ members = [
     "crates/ascent-sim",
     "crates/ascent-aero",
     "crates/ascent-app",
+    "crates/ascent-review",
 ]
 
 [workspace.package]

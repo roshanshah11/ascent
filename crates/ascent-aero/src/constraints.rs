@@ -35,7 +35,7 @@ pub struct RulePack {
 }
 
 /// Measured quantities a rule can bind to. Extend as checks grow.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct FlightQuantities {
     pub rail_exit_velocity_ms: f64,
     pub min_stability_calibers: f64,
@@ -46,7 +46,7 @@ pub struct FlightQuantities {
     pub stability_pct_len_max: f64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckResult {
     pub rule_id: String,
     pub description: String,

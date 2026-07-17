@@ -2,6 +2,7 @@ import { useEffect, useReducer, useState } from "react";
 import FlightMode from "./components/FlightMode";
 import Inspector from "./components/Inspector";
 import MotorSelector from "./components/MotorSelector";
+import ReviewPanel from "./components/ReviewPanel";
 import Viewport from "./components/Viewport";
 import { initialRunStatus, reduceRunStatus } from "./core/runState";
 import type { Design, MotorInfo, RunRecord } from "./core/types";
@@ -19,7 +20,7 @@ export default function App() {
   const [motors, setMotors] = useState<MotorInfo[]>([]);
   const [record, setRecord] = useState<RunRecord | null>(null);
   const [status, dispatch] = useReducer(reduceRunStatus, initialRunStatus);
-  const [mode, setMode] = useState<"design" | "flight">("design");
+  const [mode, setMode] = useState<"design" | "flight" | "review">("design");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -80,6 +81,9 @@ export default function App() {
           >
             Flight
           </button>
+          <button onClick={() => setMode("review")} disabled={mode === "review"}>
+            Flight Review
+          </button>
         </nav>
       </header>
 
@@ -91,8 +95,10 @@ export default function App() {
           <Inspector design={design} onChange={edit} />
           <MotorSelector motors={motors} design={design} onChange={edit} />
         </div>
-      ) : (
+      ) : mode === "flight" ? (
         record && <FlightMode record={record} />
+      ) : (
+        <ReviewPanel />
       )}
 
       {record && (

@@ -57,3 +57,41 @@ export interface RunRecord {
   events: RunEvent[];
   samples: PlaybackSample[];
 }
+
+export interface RuleCheck {
+  rule_id: string;
+  description: string;
+  citation: string;
+  measured: number;
+  required: number;
+  comparator: "gte" | "lte";
+  pass: boolean;
+}
+
+export interface ReviewData {
+  apogee_m: number;
+  rail_exit_velocity_ms: number;
+  checks: RuleCheck[];
+  feasible: boolean;
+}
+
+export interface ReviewReport {
+  review: ReviewData;
+  target_apogee_m: number;
+  target_tolerance_m: number;
+  target_met: boolean;
+  mission_feasible: boolean;
+}
+
+export interface DiffEntry {
+  field: string;
+  before: string;
+  after: string;
+}
+
+export interface RepairResult {
+  review: ReviewData;
+  target_apogee_m: number;
+  achieved_apogee_m: number;
+  diff: DiffEntry[];
+}

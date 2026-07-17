@@ -9,7 +9,8 @@ use crate::vehicle::Vehicle;
 
 /// Nose cone shapes supported in v0.1. CNα = 2 for any nose; only the CP
 /// station differs by shape (conical 2/3·L, ogive ≈ 0.466·L).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum NoseShape {
     Conical,
     Ogive,

@@ -71,7 +71,9 @@ dependencies = [
 name = "ascent-app"
 version = "0.1.0"
 dependencies = [
+ "ascent-aero",
  "ascent-domain",
+ "ascent-review",
  "ascent-sim",
  "serde",
  "serde_json",
@@ -87,6 +89,18 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "ascent-review"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "ascent-aero",
+ "ascent-domain",
+ "ascent-sim",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

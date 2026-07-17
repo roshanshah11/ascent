@@ -4,8 +4,10 @@
 //! DTOs and downsamples the trajectory for playback.
 
 mod design;
+mod review_ipc;
 
 pub use design::{run_design, Design, MotorInfo, RunRecord};
+pub use review_ipc::{repair as review_repair, report as review_report, ReviewReport};
 
 #[tauri::command]
 fn reference_design() -> Design {
@@ -22,13 +24,25 @@ fn run_simulation(design: Design) -> Result<RunRecord, String> {
     run_design(&design)
 }
 
+#[tauri::command]
+fn flight_review(target_apogee_m: f64) -> Result<ReviewReport, String> {
+    review_ipc::report(target_apogee_m)
+}
+
+#[tauri::command]
+fn solve_review(target_apogee_m: f64) -> Result<ascent_review::Repair, String> {
+    review_ipc::repair(target_apogee_m)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             reference_design,
             list_motors,
-            run_simulation
+            run_simulation,
+            flight_review,
+            solve_review
         ])
         .run(tauri::generate_context!())
         .expect("error while running ascent");
