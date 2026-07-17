@@ -94,6 +94,35 @@ pub fn parse_eng(text: &str, provenance: &Value) -> Result<Vec<Motor>, EngImport
                 malformed(data_line_no, format!("non-numeric thrust_n '{}'", data_fields[1]))
             })?;
 
+            if !t.is_finite() {
+                return Err(malformed(
+                    data_line_no,
+                    format!("non-finite time_s '{}'", data_fields[0]),
+                ));
+            }
+            if !thrust.is_finite() {
+                return Err(malformed(
+                    data_line_no,
+                    format!("non-finite thrust_n '{}'", data_fields[1]),
+                ));
+            }
+            if thrust_curve.is_empty() && t <= 0.0 {
+                return Err(malformed(
+                    data_line_no,
+                    "first time_s must be > 0 because RASP has an implicit (0, 0) start point",
+                ));
+            }
+            if let Some(&(previous_time, _)) = thrust_curve.last() {
+                if t <= previous_time {
+                    return Err(malformed(
+                        data_line_no,
+                        format!(
+                            "time_s must be strictly increasing (previous sample was {previous_time})"
+                        ),
+                    ));
+                }
+            }
+
             thrust_curve.push((t, thrust));
             last_data_line = data_line_no;
             i += 1;
@@ -101,6 +130,31 @@ pub fn parse_eng(text: &str, provenance: &Value) -> Result<Vec<Motor>, EngImport
             if thrust == 0.0 {
                 // RASP: an early or final zero terminates the entry.
                 terminated_at_zero = true;
+
+                let mut saw_comment_separator = false;
+                while i < lines.len() {
+                    let next_line_no = i + 1;
+                    let next_trimmed = lines[i].trim();
+                    if next_trimmed.is_empty() {
+                        i += 1;
+                        continue;
+                    }
+                    if next_trimmed.starts_with(';') {
+                        saw_comment_separator = true;
+                        i += 1;
+                        continue;
+                    }
+                    if !saw_comment_separator {
+                        let next_fields: Vec<&str> = next_trimmed.split_whitespace().collect();
+                        let message = if next_fields.len() == 2 {
+                            "data sample follows a terminal zero-thrust sample"
+                        } else {
+                            "a new motor entry after terminal zero requires a separating comment line"
+                        };
+                        return Err(malformed(next_line_no, message));
+                    }
+                    break;
+                }
                 break;
             }
         }

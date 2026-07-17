@@ -10,6 +10,17 @@ const MULTI: &str = include_str!("../../../data/eng-samples/estes_multi_entry.en
 const D12_MISSING_ZERO: &str =
     include_str!("../../../data/eng-samples/estes_d12_missing_terminal_zero.eng");
 
+fn fixture_contents(file: &str) -> &'static str {
+    match file {
+        "estes_b6_cert.eng" => B6,
+        "estes_c6_cert.eng" => C6,
+        "openrocket_d10.eng" => D10,
+        "estes_multi_entry.eng" => MULTI,
+        "estes_d12_missing_terminal_zero.eng" => D12_MISSING_ZERO,
+        other => panic!("manifest names an unknown corpus fixture: {other}"),
+    }
+}
+
 /// The MANIFEST enumerates the sample corpus; this pins that we're reading
 /// the same directory the manifest describes (so a future rename of a
 /// fixture without updating the manifest fails loudly here).
@@ -27,6 +38,132 @@ fn manifest_lists_all_five_samples() {
         "estes_d12_missing_terminal_zero.eng",
     ] {
         assert!(files.contains(&expected), "manifest missing {expected}");
+    }
+}
+
+#[test]
+fn manifest_drives_exact_impulse_and_rejection_expectations_for_full_corpus() {
+    let manifest: serde_json::Value = serde_json::from_str(MANIFEST).unwrap();
+    let samples = manifest["samples"].as_array().expect("manifest samples must be an array");
+
+    for sample in samples {
+        let file = sample["file"].as_str().expect("sample must name its fixture");
+        let expected = sample["expected"]
+            .as_object()
+            .unwrap_or_else(|| panic!("manifest sample {file} must declare an expectation"));
+        let contents = fixture_contents(file);
+
+        match expected["kind"].as_str() {
+            Some("valid") => {
+                let expected_motors = expected["motors"]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("valid sample {file} must declare motors"));
+                let motors = parse_eng(contents, &json!({"fixture": file}))
+                    .unwrap_or_else(|err| panic!("valid sample {file} did not parse: {err}"));
+                assert_eq!(motors.len(), expected_motors.len(), "motor count for {file}");
+
+                for (motor, expected_motor) in motors.iter().zip(expected_motors) {
+                    assert_eq!(
+                        motor.designation,
+                        expected_motor["designation"]
+                            .as_str()
+                            .expect("motor expectation must name its designation"),
+                        "designation for {file}"
+                    );
+                    assert_eq!(
+                        motor.expected_total_impulse_ns,
+                        expected_motor["total_impulse_ns"]
+                            .as_f64()
+                            .expect("motor expectation must declare exact total impulse"),
+                        "total impulse for {} in {file}",
+                        motor.designation
+                    );
+                }
+            }
+            Some("invalid") => {
+                let expected_error = expected["error"]
+                    .as_object()
+                    .unwrap_or_else(|| panic!("invalid sample {file} must declare an error"));
+                let err = parse_eng(contents, &json!({"fixture": file}))
+                    .expect_err("manifest-invalid fixture must be rejected");
+                match err {
+                    EngImportError::Malformed { line, message } => {
+                        assert_eq!(
+                            line,
+                            expected_error["line"]
+                                .as_u64()
+                                .expect("error expectation must declare a line") as usize,
+                            "error line for {file}"
+                        );
+                        match expected_error["class"].as_str() {
+                            Some("missing_terminal_zero") => assert!(
+                                message.contains("terminal zero"),
+                                "missing-terminal-zero error for {file}: {message}"
+                            ),
+                            Some(class) => panic!("unsupported manifest error class {class}"),
+                            None => panic!("error expectation for {file} must declare a class"),
+                        }
+                    }
+                }
+            }
+            Some(kind) => panic!("unsupported expectation kind {kind} for {file}"),
+            None => panic!("manifest sample {file} must declare an expectation kind"),
+        }
+    }
+}
+
+#[test]
+fn malformed_sample_times_and_thrusts_report_their_source_lines() {
+    let cases = [
+        (
+            "non-monotonic time",
+            "C6 18 70 0-3-5-7 .0108 .0231 E\n0.1 5\n0.1 4\n0.2 0\n",
+            3,
+            "strictly increasing",
+        ),
+        (
+            "non-finite time",
+            "C6 18 70 0-3-5-7 .0108 .0231 E\nNaN 5\n0.2 0\n",
+            2,
+            "finite time_s",
+        ),
+        (
+            "non-finite thrust",
+            "C6 18 70 0-3-5-7 .0108 .0231 E\n0.1 NaN\n0.2 0\n",
+            2,
+            "finite thrust_n",
+        ),
+        (
+            "explicit initial sample",
+            "C6 18 70 0-3-5-7 .0108 .0231 E\n0 5\n0.2 0\n",
+            2,
+            "implicit",
+        ),
+        (
+            "data after terminal zero",
+            "C6 18 70 0-3-5-7 .0108 .0231 E\n0.1 5\n0.2 0\n0.3 1\n",
+            4,
+            "terminal zero",
+        ),
+        (
+            "adjacent entry without comment separator",
+            "C6 18 70 0-3-5-7 .0108 .0231 E\n0.1 5\n0.2 0\nB6 18 70 0 .0056 .0156 E\n0.1 4\n0.2 0\n",
+            4,
+            "separating comment",
+        ),
+    ];
+
+    for (name, source, expected_line, expected_message) in cases {
+        let err = parse_eng(source, &json!({})).expect_err(name);
+        match err {
+            EngImportError::Malformed { line, message } => {
+                assert_eq!(line, expected_line, "{name} line");
+                assert!(
+                    message.contains(expected_message),
+                    "{name} message should contain '{expected_message}', got: {message}"
+                );
+            }
+        }
     }
 }
 
