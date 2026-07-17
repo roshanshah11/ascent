@@ -5,12 +5,12 @@ Companion specs: `PROJECT_SPEC.md` (9-day slice), `IDEA_SPEC.md` (full idea).
 
 ## Build days (each has an exit gate — don't advance without it)
 
-- [ ] **Day 1 — trusted motor + vertical-flight kernel** *(IN PROGRESS 2026-07-17)*
+- [x] **Day 1 — trusted motor + vertical-flight kernel** *(DONE 2026-07-17, commit `1a4477c`)*
   Rust workspace, bundled C6 curve with provenance, interpolation/impulse/mass-depletion + tests, point-mass derivative, RK4, analytic no-drag fixture.
-  Exit: CLI prints deterministic trajectory; all physics tests pass.
-- [ ] **Day 2 — flight phases + convergence**
-  Rail constraint, drag, atmosphere, event detection (rail exit, burnout, apogee, recovery, landing), timestep convergence report.
-  Exit: event timeline + summary stable at dt/2.
+  Exit passed: CLI prints deterministic trajectory; all physics tests pass. Alpha III/C6 → 358 m.
+- [x] **Day 2 — flight phases + convergence** *(DONE 2026-07-17, commit `95841a1`)*
+  Rail constraint, drag, 1976 standard atmosphere, event detection (liftoff, rail exit, burnout, apogee, recovery deploy, landing), chute descent, timestep convergence report.
+  Exit passed: full event timeline; apogee stable to <1 mm at dt/2; 38/38 tests.
 - [ ] **Day 3 — one external reference**
   Frozen rocket+motor fixture; compare vs manually exported OpenRocket (Alpha III / C6-5) values; record tolerances + assumptions.
   Exit: evidence page states what agrees, what differs, why.
