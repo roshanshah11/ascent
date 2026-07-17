@@ -21,6 +21,16 @@ fn bundled_registry_has_the_three_stock_motors() {
 }
 
 #[test]
+fn bundled_motor_serialization_omits_absent_raw_header() {
+    let bundled_c6 = MotorRegistry::bundled().get("C6").unwrap().clone();
+    let serialized = serde_json::to_value(bundled_c6).expect("bundled motor should serialize");
+    assert!(
+        serialized.get("raw_header").is_none(),
+        "an absent raw header must not change bundled motor JSON or hash inputs"
+    );
+}
+
+#[test]
 fn register_eng_adds_a_new_designation_alongside_the_bundled_set() {
     let mut reg = MotorRegistry::bundled();
     let outcome = reg
@@ -30,6 +40,14 @@ fn register_eng_adds_a_new_designation_alongside_the_bundled_set() {
     assert!(outcome.replaced.is_empty(), "a new designation replaces nothing");
     let m = reg.get("B6-0").expect("B6-0 must be findable after registration");
     assert_eq!(m.manufacturer, "E");
+    assert_eq!(
+        m.raw_header.as_deref(),
+        Some("B6-0 18 70 0 0.0056 0.0156 E")
+    );
+    assert_eq!(
+        serde_json::to_value(m).expect("registered motor should serialize")["raw_header"],
+        json!("B6-0 18 70 0 0.0056 0.0156 E")
+    );
     // Bundled "B6" is untouched; the registry now also has "B6-0".
     assert!(reg.get("B6").is_some(), "bundled B6 must still be present");
     assert_eq!(reg.list().len(), 4, "B6-0 is a new designation, so the registry grows");

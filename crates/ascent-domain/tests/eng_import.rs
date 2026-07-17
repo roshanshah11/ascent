@@ -1,5 +1,6 @@
 use ascent_domain::eng_import::{parse_eng, EngImportError};
 use serde_json::json;
+use std::{collections::BTreeSet, fs};
 
 const MANIFEST: &str = include_str!("../../../data/eng-samples/MANIFEST.json");
 
@@ -9,6 +10,17 @@ const D10: &str = include_str!("../../../data/eng-samples/openrocket_d10.eng");
 const MULTI: &str = include_str!("../../../data/eng-samples/estes_multi_entry.eng");
 const D12_MISSING_ZERO: &str =
     include_str!("../../../data/eng-samples/estes_d12_missing_terminal_zero.eng");
+
+fn fixture_contents(file: &str) -> &'static str {
+    match file {
+        "estes_b6_cert.eng" => B6,
+        "estes_c6_cert.eng" => C6,
+        "openrocket_d10.eng" => D10,
+        "estes_multi_entry.eng" => MULTI,
+        "estes_d12_missing_terminal_zero.eng" => D12_MISSING_ZERO,
+        other => panic!("manifest names an unknown corpus fixture: {other}"),
+    }
+}
 
 /// The MANIFEST enumerates the sample corpus; this pins that we're reading
 /// the same directory the manifest describes (so a future rename of a
@@ -27,6 +39,283 @@ fn manifest_lists_all_five_samples() {
         "estes_d12_missing_terminal_zero.eng",
     ] {
         assert!(files.contains(&expected), "manifest missing {expected}");
+    }
+}
+
+#[test]
+fn manifest_and_physical_eng_corpus_have_exactly_the_same_files() {
+    let manifest: serde_json::Value = serde_json::from_str(MANIFEST).unwrap();
+    let manifest_files: BTreeSet<String> = manifest["samples"]
+        .as_array()
+        .expect("manifest samples must be an array")
+        .iter()
+        .map(|sample| {
+            sample["file"]
+                .as_str()
+                .expect("manifest sample must name a file")
+                .to_owned()
+        })
+        .collect();
+    let corpus_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("data/eng-samples");
+    let physical_files: BTreeSet<String> = fs::read_dir(&corpus_dir)
+        .expect("the corpus directory must be readable")
+        .map(|entry| entry.expect("corpus directory entries must be readable").path())
+        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("eng"))
+        .map(|path| {
+            path.file_name()
+                .expect(".eng file must have a name")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+
+    assert_eq!(
+        physical_files, manifest_files,
+        "MANIFEST.json must name every and only physical .eng corpus fixture"
+    );
+}
+
+#[test]
+fn parse_eng_retains_each_exact_raw_header_line() {
+    let source = "\tC6\t18 70 0-3-5-7 .0108 .0231 E   \n0.1 5\n0.2 0\n; separates entries\n B6 18 70 0 .0056 .0156 E\t\n0.1 4\n0.2 0\n";
+    let motors = parse_eng(source, &json!({})).expect("both entries should parse");
+    assert_eq!(
+        motors[0].raw_header.as_deref(),
+        Some("\tC6\t18 70 0-3-5-7 .0108 .0231 E   ")
+    );
+    assert_eq!(
+        motors[1].raw_header.as_deref(),
+        Some(" B6 18 70 0 .0056 .0156 E\t")
+    );
+    let raw_headers: Vec<Option<String>> = motors
+        .iter()
+        .map(|motor| {
+            serde_json::to_value(motor)
+                .expect("parsed motor should serialize")["raw_header"]
+                .as_str()
+                .map(ToOwned::to_owned)
+        })
+        .collect();
+
+    assert_eq!(
+        raw_headers,
+        vec![
+            Some("\tC6\t18 70 0-3-5-7 .0108 .0231 E   ".to_owned()),
+            Some(" B6 18 70 0 .0056 .0156 E\t".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn manifest_drives_exact_impulse_and_rejection_expectations_for_full_corpus() {
+    let manifest: serde_json::Value = serde_json::from_str(MANIFEST).unwrap();
+    let samples = manifest["samples"].as_array().expect("manifest samples must be an array");
+
+    for sample in samples {
+        let file = sample["file"].as_str().expect("sample must name its fixture");
+        let expected = sample["expected"]
+            .as_object()
+            .unwrap_or_else(|| panic!("manifest sample {file} must declare an expectation"));
+        let contents = fixture_contents(file);
+
+        match expected["kind"].as_str() {
+            Some("valid") => {
+                let expected_motors = expected["motors"]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("valid sample {file} must declare motors"));
+                let motors = parse_eng(contents, &json!({"fixture": file}))
+                    .unwrap_or_else(|err| panic!("valid sample {file} did not parse: {err}"));
+                assert_eq!(motors.len(), expected_motors.len(), "motor count for {file}");
+
+                for (motor, expected_motor) in motors.iter().zip(expected_motors) {
+                    assert_eq!(
+                        motor.designation,
+                        expected_motor["designation"]
+                            .as_str()
+                            .expect("motor expectation must name its designation"),
+                        "designation for {file}"
+                    );
+                    assert_eq!(
+                        motor.expected_total_impulse_ns,
+                        expected_motor["total_impulse_ns"]
+                            .as_f64()
+                            .expect("motor expectation must declare exact total impulse"),
+                        "total impulse for {} in {file}",
+                        motor.designation
+                    );
+                }
+            }
+            Some("invalid") => {
+                let expected_error = expected["error"]
+                    .as_object()
+                    .unwrap_or_else(|| panic!("invalid sample {file} must declare an error"));
+                let err = parse_eng(contents, &json!({"fixture": file}))
+                    .expect_err("manifest-invalid fixture must be rejected");
+                match err {
+                    EngImportError::Malformed { line, message } => {
+                        assert_eq!(
+                            line,
+                            expected_error["line"]
+                                .as_u64()
+                                .expect("error expectation must declare a line") as usize,
+                            "error line for {file}"
+                        );
+                        match expected_error["class"].as_str() {
+                            Some("missing_terminal_zero") => assert!(
+                                message.contains("terminal zero"),
+                                "missing-terminal-zero error for {file}: {message}"
+                            ),
+                            Some(class) => panic!("unsupported manifest error class {class}"),
+                            None => panic!("error expectation for {file} must declare a class"),
+                        }
+                    }
+                }
+            }
+            Some(kind) => panic!("unsupported expectation kind {kind} for {file}"),
+            None => panic!("manifest sample {file} must declare an expectation kind"),
+        }
+    }
+}
+
+#[test]
+fn malformed_sample_times_and_thrusts_report_their_source_lines() {
+    let cases = [
+        (
+            "non-monotonic time",
+            "C6 18 70 0-3-5-7 .0108 .0231 E\n0.1 5\n0.1 4\n0.2 0\n",
+            3,
+            "strictly increasing",
+        ),
+        (
+            "non-finite time",
+            "C6 18 70 0-3-5-7 .0108 .0231 E\nNaN 5\n0.2 0\n",
+            2,
+            "finite time_s",
+        ),
+        (
+            "non-finite thrust",
+            "C6 18 70 0-3-5-7 .0108 .0231 E\n0.1 NaN\n0.2 0\n",
+            2,
+            "finite thrust_n",
+        ),
+        (
+            "explicit initial sample",
+            "C6 18 70 0-3-5-7 .0108 .0231 E\n0 5\n0.2 0\n",
+            2,
+            "implicit",
+        ),
+        (
+            "data after terminal zero",
+            "C6 18 70 0-3-5-7 .0108 .0231 E\n0.1 5\n0.2 0\n0.3 1\n",
+            4,
+            "terminal zero",
+        ),
+        (
+            "adjacent entry without comment separator",
+            "C6 18 70 0-3-5-7 .0108 .0231 E\n0.1 5\n0.2 0\nB6 18 70 0 .0056 .0156 E\n0.1 4\n0.2 0\n",
+            4,
+            "separating comment",
+        ),
+    ];
+
+    for (name, source, expected_line, expected_message) in cases {
+        let err = parse_eng(source, &json!({})).expect_err(name);
+        match err {
+            EngImportError::Malformed { line, message } => {
+                assert_eq!(line, expected_line, "{name} line");
+                assert!(
+                    message.contains(expected_message),
+                    "{name} message should contain '{expected_message}', got: {message}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn malformed_header_numbers_and_negative_thrust_report_source_lines() {
+    let cases = [
+        (
+            "non-numeric diameter",
+            "C6 not-a-number 70 0-3-5-7 .0108 .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "invalid diameter_mm",
+        ),
+        (
+            "non-finite diameter",
+            "C6 NaN 70 0-3-5-7 .0108 .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "finite diameter_mm",
+        ),
+        (
+            "non-finite length",
+            "C6 18 NaN 0-3-5-7 .0108 .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "finite length_mm",
+        ),
+        (
+            "non-finite propellant mass",
+            "C6 18 70 0-3-5-7 NaN .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "finite propellant_kg",
+        ),
+        (
+            "non-finite loaded mass",
+            "C6 18 70 0-3-5-7 .0108 NaN E\n0.1 5\n0.2 0\n",
+            1,
+            "finite loaded_mass_kg",
+        ),
+        (
+            "nonpositive diameter",
+            "C6 0 70 0-3-5-7 .0108 .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "positive diameter_mm",
+        ),
+        (
+            "nonpositive length",
+            "C6 18 -70 0-3-5-7 .0108 .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "positive length_mm",
+        ),
+        (
+            "nonpositive propellant mass",
+            "C6 18 70 0-3-5-7 0 .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "positive propellant_kg",
+        ),
+        (
+            "nonpositive loaded mass",
+            "C6 18 70 0-3-5-7 .0108 0 E\n0.1 5\n0.2 0\n",
+            1,
+            "positive loaded_mass_kg",
+        ),
+        (
+            "propellant exceeding loaded mass",
+            "C6 18 70 0-3-5-7 .03 .0231 E\n0.1 5\n0.2 0\n",
+            1,
+            "exceeds loaded_mass_kg",
+        ),
+        (
+            "negative thrust",
+            "C6 18 70 0-3-5-7 .0108 .0231 E\n0.1 -1\n0.2 0\n",
+            2,
+            "negative thrust_n",
+        ),
+    ];
+
+    for (name, source, expected_line, expected_message) in cases {
+        let err = parse_eng(source, &json!({})).expect_err(name);
+        match err {
+            EngImportError::Malformed { line, message } => {
+                assert_eq!(line, expected_line, "{name} line");
+                assert!(
+                    message.contains(expected_message),
+                    "{name} message should contain '{expected_message}', got: {message}"
+                );
+            }
+        }
     }
 }
 

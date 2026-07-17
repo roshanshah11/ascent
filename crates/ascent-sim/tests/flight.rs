@@ -18,6 +18,7 @@ fn constant_thrust_motor(thrust_n: f64, burn_s: f64) -> Motor {
     Motor {
         designation: "CONST".into(),
         manufacturer: "test".into(),
+        raw_header: None,
         total_mass_kg: 1e-9,
         propellant_mass_kg: 1e-12,
         expected_total_impulse_ns: thrust_n * burn_s,
