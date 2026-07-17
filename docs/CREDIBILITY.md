@@ -1,15 +1,16 @@
 # Credibility scorecard
 
-Ascent reports a **NASA-STD-7009-inspired** credibility scorecard. It is an
-evidence-and-limits summary, not an assertion of NASA certification or
-compliance. The inspiration and the rationale for labeling extrapolation are
-described in [Professional software research](PROFESSIONAL_SOFTWARE_RESEARCH.md)
-§3, which links the NASA standard and the ASME V&V extrapolation guidance.
+This document defines Ascent's intended **NASA-STD-7009-inspired** credibility
+scorecard. When implemented, it will be an evidence-and-limits summary, not an
+assertion of NASA certification or compliance. The inspiration and the
+rationale for labeling extrapolation are described in
+[Professional software research](PROFESSIONAL_SOFTWARE_RESEARCH.md) §3, which
+links the NASA standard and the ASME V&V extrapolation guidance.
 
-The scorecard helps a reader see what has been checked, what inputs support a
-result, and where the present model no longer has supporting evidence. It does
-not certify flightworthiness, ensure accuracy, or replace range-safety or
-competition approval.
+The scorecard is designed to help a reader see what has been checked, what
+inputs support a result, and where the present model no longer has supporting
+evidence. It does not certify flightworthiness, ensure accuracy, or replace
+range-safety or competition approval.
 
 ## Factors and 0–4 rubrics
 
@@ -68,20 +69,23 @@ simulation.
   evidence gap. It must include a human-readable, named reason identifying the
   boundary or missing evidence.
 
-At present, Ascent's vertical, subsonic reference configuration is bounded by
-the named OpenRocket evidence in `docs/EVIDENCE.md`: OpenRocket 24.12's
-bundled **"A simple model rocket"** example with an Estes C6-5 under the
-documented default launch conditions. Quantities within that reference regime
-may be labeled `Validated` only when their basis cites the corresponding frozen
+At present, the evidence boundary for Ascent's vertical, subsonic, no-wind
+reference configuration is the named comparison in `docs/EVIDENCE.md` with
+OpenRocket 24.12's bundled **"A simple model rocket"** example, an Estes C6-5,
+and the documented default launch conditions. The OpenRocket comparator is a
+3-D flight with 2 m/s wind; it is not itself a vertical or no-wind
+configuration. Quantities within Ascent's stated reference regime may be
+labeled `Validated` only when their basis cites the corresponding frozen
 OpenRocket data, fixture, or regression test named above.
 
 An apogee prediction that is supersonic, or otherwise outside that vertical,
 subsonic reference configuration, must be labeled `Extrapolated`. Its reason
 must name why, for example: "Extrapolated: predicted max Mach is supersonic;
-the OpenRocket reference evidence is vertical and subsonic," or
-"Extrapolated: wind-driven trajectory is outside the vertical reference
-configuration." A flag must never conceal the reason that supporting evidence
-does not apply.
+the evidence covers Ascent's vertical, subsonic, no-wind model only through a
+comparison against a 3-D OpenRocket flight with 2 m/s wind," or
+"Extrapolated: wind-driven trajectory is outside Ascent's vertical, no-wind
+reference-model regime." A flag must never conceal the reason that supporting
+evidence does not apply.
 
 ## Implementation contract
 
