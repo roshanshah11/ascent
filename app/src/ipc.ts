@@ -7,6 +7,7 @@ import type {
   RepairResult,
   ReviewReport,
   RunRecord,
+  SpreadResult,
 } from "./core/types";
 
 export function fetchReferenceDesign(): Promise<Design> {
@@ -19,6 +20,10 @@ export function fetchMotors(): Promise<MotorInfo[]> {
 
 export function runSimulation(design: Design): Promise<RunRecord> {
   return invoke<RunRecord>("run_simulation", { design });
+}
+
+export function runSpread(design: Design): Promise<SpreadResult> {
+  return invoke<SpreadResult>("run_spread", { design });
 }
 
 export function fetchEvidence(design: Design): Promise<EvidenceReport> {

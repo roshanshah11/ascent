@@ -1,0 +1,24 @@
+{
+  "schema_version": "ascent-rocketpy-response-v1",
+  "rocketpy_version": "1.12.1",
+  "summary": {
+    "apogee_m": 361.09734484916976,
+    "apogee_time_s": 7.835615824944943,
+    "burnout_time_s": 1.86,
+    "burnout_velocity_ms": 112.31386343247217,
+    "max_velocity_ms": 113.05007034635975,
+    "rail_exit_velocity_ms": 17.657228353662223,
+    "landing_time_s": 102.83670454318704,
+    "landing_velocity_ms": -3.779699274808967,
+    "events": [
+      { "kind": "Liftoff", "t_s": 0.0, "altitude_m": 0.0, "velocity_ms": 0.0 },
+      { "kind": "RailExit", "t_s": 0.18780836242564417, "altitude_m": 0.9000000038014335, "velocity_ms": 17.657228353662223 },
+      { "kind": "Burnout", "t_s": 1.86, "altitude_m": 125.71424047967764, "velocity_ms": 112.31386343247217 },
+      { "kind": "Apogee", "t_s": 7.835615824944943, "altitude_m": 361.09734484916976, "velocity_ms": 0.0 },
+      { "kind": "RecoveryDeploy", "t_s": 7.835615824944943, "altitude_m": 361.09734484916976, "velocity_ms": 0.0 },
+      { "kind": "Landing", "t_s": 102.83670454318704, "altitude_m": 0.0, "velocity_ms": -3.779699274808967 }
+    ],
+    "timestep_s": 0.005,
+    "steps": 23116
+  }
+}

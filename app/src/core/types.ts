@@ -58,6 +58,20 @@ export interface RunRecord {
   samples: PlaybackSample[];
 }
 
+export interface RocketPySpread {
+  available: boolean;
+  engine_id: string;
+  engine_version: string;
+  summary: SimSummaryLite | null;
+  reason: string | null;
+}
+
+export interface SpreadResult {
+  native: SimSummaryLite;
+  rocketpy: RocketPySpread;
+  apogee_spread_m: number | null;
+}
+
 export interface ConvergenceInfo {
   dt_s: number;
   apogee_m: [number, number, number];

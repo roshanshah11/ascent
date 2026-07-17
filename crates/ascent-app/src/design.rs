@@ -7,6 +7,8 @@ use ascent_sim::{
     simulate_vertical, AtmosphereModel, DragModel, Environment, NativeEngine, Recovery, Rocket,
     SimConfig, SimEngine, SimSummary,
 };
+#[cfg(feature = "bridge-rocketpy")]
+use ascent_sim::RocketPyEngine;
 use serde::{Deserialize, Serialize};
 
 /// The app's motor catalog for this process: starts from the bundled
@@ -163,6 +165,25 @@ pub struct RunRecord {
     pub samples: Vec<PlaybackSample>,
 }
 
+/// A cross-validation result. `native` is always present; `rocketpy` is an
+/// explicit comparison entry and can be unavailable without invalidating the
+/// native run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpreadResult {
+    pub native: SimSummary,
+    pub rocketpy: RocketPySpread,
+    pub apogee_spread_m: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RocketPySpread {
+    pub available: bool,
+    pub engine_id: String,
+    pub engine_version: String,
+    pub summary: Option<SimSummary>,
+    pub reason: Option<String>,
+}
+
 /// Cap playback samples sent over IPC; full fidelity stays in the summary.
 const MAX_PLAYBACK_SAMPLES: usize = 2_000;
 
@@ -252,6 +273,53 @@ pub fn run_design(design: &Design) -> Result<RunRecord, String> {
     })
 }
 
+/// Run native first, then optionally ask the developer-gated RocketPy bridge
+/// for a side-by-side comparison. The comparison never substitutes for or
+/// averages into native output.
+pub fn run_spread(design: &Design) -> Result<SpreadResult, String> {
+    let (rocket, motor, env) = build_flight(design)?;
+    let config = SimConfig::default();
+    let native = NativeEngine.run(&rocket, &motor, &env, &config)?;
+
+    #[cfg(feature = "bridge-rocketpy")]
+    let rocketpy = {
+        let engine = RocketPyEngine::from_environment();
+        match engine.run(&rocket, &motor, &env, &config) {
+            Ok(summary) => RocketPySpread {
+                available: true,
+                engine_id: engine.id().into(),
+                engine_version: summary.sim_version.clone(),
+                summary: Some(summary),
+                reason: None,
+            },
+            Err(reason) => RocketPySpread {
+                available: false,
+                engine_id: engine.id().into(),
+                engine_version: engine.version().into(),
+                summary: None,
+                reason: Some(reason),
+            },
+        }
+    };
+    #[cfg(not(feature = "bridge-rocketpy"))]
+    let rocketpy = RocketPySpread {
+        available: false,
+        engine_id: "rocketpy-bridge".into(),
+        engine_version: "not-compiled".into(),
+        summary: None,
+        reason: Some("RocketPy bridge is not compiled in this build".into()),
+    };
+    let apogee_spread_m = rocketpy
+        .summary
+        .as_ref()
+        .map(|summary| (native.apogee_m - summary.apogee_m).abs());
+    Ok(SpreadResult {
+        native,
+        rocketpy,
+        apogee_spread_m,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -278,6 +346,18 @@ mod tests {
             serde_json::to_string(&a.summary).unwrap(),
             serde_json::to_string(&b.summary).unwrap()
         );
+    }
+
+    #[test]
+    #[cfg(not(feature = "bridge-rocketpy"))]
+    fn spread_keeps_the_native_result_when_rocketpy_is_not_compiled() {
+        let spread = run_spread(&Design::reference()).expect("native spread result");
+
+        assert!(spread.native.apogee_m > 350.0);
+        assert!(!spread.rocketpy.available);
+        assert!(spread.rocketpy.summary.is_none());
+        assert!(spread.rocketpy.reason.as_deref().unwrap_or_default().contains("not compiled"));
+        assert!(spread.apogee_spread_m.is_none());
     }
 
     #[test]
