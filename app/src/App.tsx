@@ -7,6 +7,7 @@ import MotorSelector from "./components/MotorSelector";
 import ReviewPanel from "./components/ReviewPanel";
 import SpreadPanel from "./components/SpreadPanel";
 import Viewport from "./components/Viewport";
+import Viewport3D from "./components/Viewport3D";
 import {
   canRedo,
   canUndo,
@@ -38,6 +39,7 @@ const STATE_BADGE: Record<string, { label: string; color: string }> = {
 
 export default function App() {
   const [design, setDesign] = useState<Design | null>(null);
+  const [view3d, setView3d] = useState(false);
   const [motors, setMotors] = useState<MotorInfo[]>([]);
   const [record, setRecord] = useState<RunRecord | null>(null);
   const [spread, setSpread] = useState<SpreadResult | null>(null);
@@ -250,7 +252,17 @@ export default function App() {
       {mode === "design" ? (
         <>
           <div style={{ display: "flex", gap: 32 }}>
-            <Viewport design={design} />
+            <div>
+              {view3d ? <Viewport3D design={design} /> : <Viewport design={design} />}
+              <div style={{ marginTop: 4 }}>
+                <button onClick={() => setView3d(false)} disabled={!view3d}>
+                  2D
+                </button>
+                <button onClick={() => setView3d(true)} disabled={view3d}>
+                  3D
+                </button>
+              </div>
+            </div>
             <Inspector design={design} onChange={edit} />
             <MotorSelector motors={motors} design={design} onChange={edit} />
           </div>
