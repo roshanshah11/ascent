@@ -14,9 +14,9 @@ Companion specs: `PROJECT_SPEC.md` (9-day slice), `IDEA_SPEC.md` (full idea).
 - [x] **Day 3 — one external reference** *(DONE 2026-07-17)*
   Frozen fixture from manual OpenRocket 24.12 export ("simple model rocket" example / C6-5); regression tests with explicit tolerances; `docs/EVIDENCE.md` agree/differ/why table.
   Exit passed: apogee within 1.4%, max velocity 0.1%; every residual traced to a named modeling choice. 42/42 tests.
-- [ ] **Day 4 — parametric vehicle + stability**
-  Nose/body/fins/payload/motor/chute model; mass, CG, Barrowman CP, time-varying stability; IREC constraints with rule-source links.
-  Exit: editing mass/fins produces correct, tested stability changes.
+- [x] **Day 4 — parametric vehicle + stability** *(DONE 2026-07-17, commit `7632645`)*
+  `ascent-aero` crate: nose/body/fins/point-mass model, time-varying CG, Barrowman CP (techdoc), stability in calibers, rule-pack constraint engine (plan defaults until A1 lands; A2 fixture adds exact Alpha III pins).
+  Exit passed: span/payload/tail-mass edits produce correct tested stability changes; constraint pass/fail tested at rule boundaries. 57 tests total.
 - [ ] **Day 5 — app shell + design mode** (Tauri + React)
   Viewport, inspector, motor selector; design revision + dirty/stale/running/current states.
   Exit: alter the reference rocket without touching JSON.

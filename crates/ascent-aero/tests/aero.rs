@@ -237,6 +237,9 @@ fn constraint_boundaries_pass_at_value_fail_below() {
         rail_exit_velocity_ms: 25.0,
         min_stability_calibers: 1.5,
         fin_span_calibers: 0.8,
+        stability_pct_len_at_launch: 12.0,
+        stability_pct_len_min: 9.0,
+        stability_pct_len_max: 20.0,
     };
     assert!(pack.check(&exactly_at).iter().all(|c| c.pass));
 
@@ -244,6 +247,9 @@ fn constraint_boundaries_pass_at_value_fail_below() {
         rail_exit_velocity_ms: 24.999,
         min_stability_calibers: 1.499,
         fin_span_calibers: 0.799,
+        stability_pct_len_at_launch: 12.0,
+        stability_pct_len_min: 9.0,
+        stability_pct_len_max: 20.0,
     };
     let results = pack.check(&just_below);
     assert_eq!(results.len(), 3);
@@ -268,6 +274,9 @@ fn rule_pack_round_trips_through_json_and_skips_unknown_quantities() {
         rail_exit_velocity_ms: 31.0,
         min_stability_calibers: 2.0,
         fin_span_calibers: 1.0,
+        stability_pct_len_at_launch: 12.0,
+        stability_pct_len_min: 9.0,
+        stability_pct_len_max: 20.0,
     };
     let results = pack.check(&q);
     // Unknown quantity is skipped, not falsely passed or failed.
@@ -275,6 +284,62 @@ fn rule_pack_round_trips_through_json_and_skips_unknown_quantities() {
     assert_eq!(results[0].rule_id, "rail-exit");
     assert!(results[0].pass);
     assert_eq!(results[0].comparator, Comparator::Gte);
+}
+
+#[test]
+fn irec_2026_rule_pack_loads_with_citations() {
+    // The cited pack produced by task A1 (data/rules/irec-2026.json).
+    let json = include_str!("../../../data/rules/irec-2026.json");
+    let pack = ascent_aero::RulePack::from_irec_json(json).unwrap();
+
+    // All five evaluable rules extracted, none invented.
+    assert_eq!(pack.rules.len(), 5);
+    let rail = pack
+        .rules
+        .iter()
+        .find(|r| r.id == "irec-2026-rail-departure-velocity-minimum")
+        .expect("rail rule present");
+    assert_eq!(rail.value, 25.0);
+    assert_eq!(rail.comparator, Comparator::Gte);
+    // Every extracted rule carries a real document citation with a section.
+    for rule in &pack.rules {
+        assert!(rule.citation.contains('§'), "no section in {}", rule.citation);
+        assert!(!rule.citation.contains('?'), "unresolved section in {}", rule.citation);
+    }
+
+    // A vehicle inside all bands passes; stability 12% of length at launch.
+    let pass_q = FlightQuantities {
+        rail_exit_velocity_ms: 30.0,
+        min_stability_calibers: 2.0,
+        fin_span_calibers: 1.0,
+        stability_pct_len_at_launch: 12.0,
+        stability_pct_len_min: 9.0,
+        stability_pct_len_max: 20.0,
+    };
+    assert!(pack.check(&pass_q).iter().all(|c| c.pass));
+
+    // Over-stable at launch (19% > 18% max) fails exactly that rule.
+    let mut over = pass_q;
+    over.stability_pct_len_at_launch = 19.0;
+    let results = pack.check(&over);
+    let failed: Vec<_> = results.iter().filter(|c| !c.pass).collect();
+    assert_eq!(failed.len(), 1);
+    assert_eq!(failed[0].rule_id, "irec-2026-stability-maximum-at-launch");
+}
+
+#[test]
+fn stability_pct_of_length_consistent_with_calibers() {
+    use ascent_aero::stability_pct_of_length_at;
+    let v = test_vehicle();
+    let motor = c6();
+    let cal = stability_calibers_at(&v, NoseShape::Ogive, &motor, 0.0);
+    let pct = stability_pct_of_length_at(&v, NoseShape::Ogive, &motor, 0.0);
+    // Same (CP − CG), two denominators: pct = cal · d / L · 100.
+    assert_relative_eq!(
+        pct,
+        cal * v.diameter_m() / v.length_m() * 100.0,
+        max_relative = 1e-12
+    );
 }
 
 #[test]

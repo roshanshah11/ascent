@@ -40,6 +40,10 @@ pub struct FlightQuantities {
     pub rail_exit_velocity_ms: f64,
     pub min_stability_calibers: f64,
     pub fin_span_calibers: f64,
+    /// IREC states stability bands as percent of rocket length.
+    pub stability_pct_len_at_launch: f64,
+    pub stability_pct_len_min: f64,
+    pub stability_pct_len_max: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +99,61 @@ impl RulePack {
         }
     }
 
+    /// Load the evaluable subset of the cited IREC 2026 rule pack
+    /// (data/rules/irec-2026.json, Codex task A1). That pack's schema is
+    /// richer than this engine (structured values, applicability categories,
+    /// citation objects); this extracts only rules v0.1 can measure, mapped
+    /// by explicit rule id, with the citation flattened to one line.
+    /// Unmapped rules are skipped, never guessed at.
+    pub fn from_irec_json(json: &str) -> Result<Self, serde_json::Error> {
+        let raw: serde_json::Value = serde_json::from_str(json)?;
+        // rule id -> quantity name this engine measures
+        let id_map: &[(&str, &str)] = &[
+            ("irec-2026-rail-departure-velocity-minimum", "rail_exit_velocity_ms"),
+            ("irec-2026-fin-span-minimum", "fin_span_calibers"),
+            ("irec-2026-stability-minimum-subsonic", "stability_pct_len_min"),
+            ("irec-2026-stability-maximum-at-launch", "stability_pct_len_at_launch"),
+            ("irec-2026-stability-maximum-through-flight", "stability_pct_len_max"),
+        ];
+        let mut rules = Vec::new();
+        for rule in raw["rules"].as_array().into_iter().flatten() {
+            let id = rule["id"].as_str().unwrap_or_default();
+            let Some((_, quantity)) = id_map.iter().find(|(k, _)| *k == id) else {
+                continue;
+            };
+            let comparator = match rule["comparator"].as_str() {
+                Some("gte") => Comparator::Gte,
+                Some("lte") => Comparator::Lte,
+                _ => continue, // non-threshold comparator: not evaluable here
+            };
+            let Some(value) = rule["value"]["number"].as_f64() else {
+                continue; // non-scalar value: not evaluable here
+            };
+            let citation = {
+                let c = &rule["citation"];
+                format!(
+                    "{} {} §{}",
+                    c["document_name"].as_str().unwrap_or("IREC 2026"),
+                    c["version"].as_str().unwrap_or(""),
+                    c["section"].as_str().unwrap_or("?")
+                )
+            };
+            rules.push(Rule {
+                id: id.to_string(),
+                description: rule["description"].as_str().unwrap_or_default().to_string(),
+                quantity: quantity.to_string(),
+                comparator,
+                value,
+                units: rule["units"].as_str().unwrap_or_default().to_string(),
+                citation,
+            });
+        }
+        Ok(RulePack {
+            name: raw["id"].as_str().unwrap_or("irec-2026").to_string(),
+            rules,
+        })
+    }
+
     pub fn check(&self, q: &FlightQuantities) -> Vec<CheckResult> {
         self.rules
             .iter()
@@ -103,6 +162,9 @@ impl RulePack {
                     "rail_exit_velocity_ms" => q.rail_exit_velocity_ms,
                     "min_stability_calibers" => q.min_stability_calibers,
                     "fin_span_calibers" => q.fin_span_calibers,
+                    "stability_pct_len_at_launch" => q.stability_pct_len_at_launch,
+                    "stability_pct_len_min" => q.stability_pct_len_min,
+                    "stability_pct_len_max" => q.stability_pct_len_max,
                     _ => return None, // quantity not yet measured by this engine
                 };
                 let pass = match rule.comparator {

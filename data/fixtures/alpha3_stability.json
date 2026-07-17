@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0.0",
+  "fixture_id": "estes-alpha-iii-c6-barrowman-subsonic",
+  "description": "Equation-exact hand fixture for OpenRocket's Estes Alpha III code-verification rocket with Ascent's loaded Estes C6 motor.",
+  "coordinate_system": {
+    "datum": "nose_tip",
+    "positive_axis": "aft_along_centerline",
+    "position_units": "m",
+    "source": "OpenRocket technical documentation section 3.1.4"
+  },
+  "reference_condition": {
+    "mach": 0.3,
+    "angle_of_attack_rad": 0.0,
+    "flow_regime": "subsonic",
+    "reference_radius_m": 0.012,
+    "reference_diameter_m": 0.024,
+    "reference_area_m2": 0.0004523893421169302,
+    "compressibility_beta": 0.9539392014169457
+  },
+  "geometry": {
+    "nose": {
+      "shape": "tangent_ogive",
+      "length_m": 0.07,
+      "base_radius_m": 0.012,
+      "generating_circle_radius_m": 0.2101666666666667,
+      "generating_circle_offset_m": 0.19816666666666669,
+      "volume_m3": 0.000017030325054608967
+    },
+    "body_tube": {
+      "length_m": 0.2,
+      "outer_radius_m": 0.012,
+      "front_x_m": 0.07
+    },
+    "fin_set": {
+      "count": 3,
+      "root_chord_m": 0.05,
+      "tip_chord_m": 0.03,
+      "span_m": 0.05,
+      "tip_leading_edge_sweep_m": 0.02,
+      "root_leading_edge_x_m": 0.22,
+      "one_fin_planform_area_m2": 0.002,
+      "midchord_sweep_rad": 0.19739555984988078,
+      "midchord_sweep_cos": 0.9805806756909201,
+      "fin_fin_interference_multiplier": 1.0,
+      "body_interference_factor": 1.1935483870967742
+    },
+    "source": {
+      "document": "OpenRocket TestRockets.makeEstesAlphaIII",
+      "revision": "3115762a8db467a1c92aa505c53cea2ed32223b8",
+      "url": "https://github.com/openrocket/openrocket/blob/3115762a8db467a1c92aa505c53cea2ed32223b8/core/src/main/java/info/openrocket/core/util/TestRockets.java#L436-L592",
+      "note": "Current OpenRocket constructs this bundled code-verification design in Java; it is not the bundled 'A simple model rocket' ORK example."
+    }
+  },
+  "components": [
+    {
+      "id": "nose_cone",
+      "type": "tangent_ogive_nose",
+      "cn_alpha_per_rad": 2.0,
+      "cp_x_from_nose_m": 0.03235471645968376,
+      "normal_force_moment_m_per_rad": 0.06470943291936752,
+      "equations": [
+        "OpenRocket techdoc section 3.2.1 equation 3.19",
+        "OpenRocket techdoc section 3.2.1 equation 3.28",
+        "OpenRocket techdoc Appendix A.2 equations A.2-A.5"
+      ]
+    },
+    {
+      "id": "body_tube",
+      "type": "constant_diameter_body_tube",
+      "cn_alpha_per_rad": 0.0,
+      "cp_x_from_nose_m": null,
+      "normal_force_moment_m_per_rad": 0.0,
+      "cp_note": "Undefined for the isolated zero-CN-alpha component; omitted from the weighted CP sum.",
+      "equations": [
+        "OpenRocket techdoc section 3.2.1 equation 3.19"
+      ]
+    },
+    {
+      "id": "fin_set",
+      "type": "three_equally_spaced_trapezoidal_fins",
+      "one_fin_cn_alpha_per_rad": 13.487476504728535,
+      "count_projected_cn_alpha_per_rad": 20.231214757092804,
+      "cn_alpha_per_rad": 24.146933742336575,
+      "cp_x_from_fin_root_leading_edge_m": 0.019375,
+      "cp_x_from_nose_m": 0.239375,
+      "normal_force_moment_m_per_rad": 5.780172264571818,
+      "equations": [
+        "OpenRocket techdoc section 3.2.2 equation 3.34",
+        "OpenRocket techdoc section 3.2.2 equation 3.40",
+        "OpenRocket techdoc section 3.2.2 equations 3.53-3.56"
+      ],
+      "implementation_cross_check": {
+        "openrocket_discretized_local_cp_m": 0.0193484,
+        "difference_from_equation_exact_m": 0.0000266,
+        "source": "OpenRocket BarrowmanCalculatorTest and FinSetCalcTest at revision 3115762a8db467a1c92aa505c53cea2ed32223b8"
+      }
+    }
+  ],
+  "totals": {
+    "cn_alpha_per_rad": 26.146933742336575,
+    "normal_force_moment_m_per_rad": 5.844881697491186,
+    "cp_x_from_nose_m": 0.2235398519416934,
+    "cp_combination_equation": "OpenRocket techdoc section 3.2.1 equation 3.29",
+    "openrocket_implementation_cross_check_cp_x_m": 0.2235154
+  },
+  "mass_properties_loaded_c6": {
+    "dry_structure": {
+      "mass_kg": 0.025268291846128787,
+      "cg_x_from_nose_m": 0.19176843580003,
+      "first_moment_kg_m": 0.00484566080267077,
+      "source": "OpenRocket MassCalculatorTest.testAlphaIIIStructure at revision 3115762a8db467a1c92aa505c53cea2ed32223b8"
+    },
+    "motor": {
+      "designation": "Estes C6",
+      "loaded_mass_kg": 0.0241,
+      "length_m": 0.07,
+      "front_x_from_nose_m": 0.203,
+      "cg_x_from_nose_m": 0.238,
+      "first_moment_kg_m": 0.0057358,
+      "mass_source": "crates/ascent-domain/data/motors/estes_c6.json; NAR-certified ThrustCurve.org simfile 69eb2379c7d63000021d8c29",
+      "position_source": "OpenRocket TestRockets.makeEstesAlphaIII motor-mount geometry at revision 3115762a8db467a1c92aa505c53cea2ed32223b8"
+    },
+    "loaded_mass_kg": 0.04936829184612879,
+    "expected_cg_x_from_nose_m": 0.21433718702788207,
+    "static_margin_m": 0.009202664913811333,
+    "static_margin_calibers": 0.3834443714088055,
+    "calculation": "sum(m_i*x_i)/sum(m_i)"
+  },
+  "tolerances": {
+    "cn_alpha_absolute_per_rad": 0.000001,
+    "cp_absolute_m": 0.000001,
+    "cg_absolute_m": 0.000001,
+    "note": "Tolerances cover decimal serialization only; the fixture values are analytic results, not measurements."
+  },
+  "sources": [
+    {
+      "name": "OpenRocket technical documentation",
+      "version": "13.05",
+      "date": "2013-05-10",
+      "url": "https://openrocket.sourceforge.net/techdoc.pdf",
+      "sections": [
+        "3.1.1",
+        "3.1.4",
+        "3.2",
+        "3.2.1",
+        "3.2.2",
+        "Appendix A.2",
+        "Appendix A.7"
+      ]
+    },
+    {
+      "name": "OpenRocket source and verification tests",
+      "revision": "3115762a8db467a1c92aa505c53cea2ed32223b8",
+      "url": "https://github.com/openrocket/openrocket"
+    },
+    {
+      "name": "Ascent Estes C6 motor record",
+      "path": "crates/ascent-domain/data/motors/estes_c6.json",
+      "upstream": "ThrustCurve.org API v1, NAR-certified simfile 69eb2379c7d63000021d8c29",
+      "retrieved": "2026-07-17"
+    }
+  ]
+}
