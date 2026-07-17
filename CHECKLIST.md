@@ -23,9 +23,9 @@ Companion specs: `PROJECT_SPEC.md` (9-day slice), `IDEA_SPEC.md` (full idea).
 - [x] **Day 6 — flight mode** *(DONE 2026-07-17, commit `4b574d7`)*
   Animated playback (8x compression, scrubber), linked altitude/velocity plots with cursor, progressive event timeline, summary cards, derived warnings.
   Exit passed: rendered exclusively from the stored RunRecord — zero sim calls during playback; playback engine pure + tested (9 vitest).
-- [ ] **Day 7 — Flight Review + target solver**
-  IREC 10K profile, constraint panel, motor/ballast search, before/after diff.
-  Exit: Ascent repairs one deliberately infeasible configuration.
+- [x] **Day 7 — Flight Review + target solver** *(DONE 2026-07-17)*
+  `ascent-review` crate + Flight Review UI mode: constraint panel bound to the cited IREC pack, deterministic motor+ballast solver, before/after diff.
+  Exit passed: solver repairs the 350 m-target miss (~12 g ballast) inside a real stability window; deterministic across runs; diff complete. 88 tests total.
 - [ ] **Day 8 — provenance, tests, polish** (+copilot stretch if 1–7 done)
   Evidence drawer, input hash, model/version display; fixture regression + e2e happy path; failure-state UI, demo reset.
   Exit: clean restart reproduces the same result without network.
