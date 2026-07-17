@@ -16,6 +16,13 @@ and checked independently by OpenRocket's
 That distinction matters: the similarly named bundled “A simple model rocket”
 is not an Alpha III.
 
+It is also a verification model, not an exact digital twin of the current
+retail kit.  The [Estes product page](https://estesrockets.com/products/alpha-iii)
+lists the retail Alpha III as 12.1 in (30.7 cm) long, 0.98 in (25 mm) in
+diameter, and 1.2 oz (34 g), whereas OpenRocket's frozen model is 27.0 cm long,
+24 mm in diameter, and 25.2683 g dry.  All arithmetic in this worksheet uses
+the OpenRocket verification geometry requested for the software fixture.
+
 ## Conventions and validity
 
 - The datum is the nose tip.  `x` increases aft along the centerline; every CP
@@ -320,8 +327,11 @@ OpenRocket's
 freezes the code-verification rocket's dry mass and axial CG as
 `m_dry=0.0252682918461 kg` and `x_dry=0.191768435800 m`.  The motor mount begins
 at `0.070+0.133=0.203 m`; a 70 mm C6 is therefore centered at
-`x_C6=0.203+0.070/2=0.238 m`.  For consistency with the flight kernel, loaded
-motor mass is `0.0241 kg` from Ascent's NAR-certified
+`x_C6=0.203+0.035=0.238 m`.  The local `0.035 m` motor CG is explicitly frozen
+by OpenRocket's
+[`generateMotor_C6_18mm()`](https://github.com/openrocket/openrocket/blob/3115762a8db467a1c92aa505c53cea2ed32223b8/core/src/main/java/info/openrocket/core/util/TestRockets.java#L189-L208),
+so it is not an assumed uniform-motor midpoint.  For consistency with the
+Ascent flight kernel, loaded motor mass is `0.0241 kg` from Ascent's NAR-certified
 [`estes_c6.json`](../crates/ascent-domain/data/motors/estes_c6.json).
 
 The ordinary first-moment mass balance (not a Barrowman aerodynamic equation)
@@ -353,6 +363,24 @@ This CG is specific to the official OpenRocket code-verification structure
 combined with Ascent's certified C6 mass.  It is not a claim that every retail
 Alpha III build has the same mass distribution; glue, finish, recovery packing,
 and motor-retention choices move the measured CG.
+
+For provenance completeness, OpenRocket's synthetic test C6 freezes a lighter
+`0.0227 kg` ignition mass at the same local `0.035 m` CG.  An all-OpenRocket
+cross-check therefore gives
+
+```text
+motor moment = 0.0227 x 0.238 = 0.005402600000 kg m
+loaded mass  = 0.0252682918461 + 0.0227 = 0.0479682918461 kg
+
+x_CG,all-OpenRocket
+  = (0.004845660803+0.005402600000)/0.0479682918461
+  = 0.213646565434 m from the nose tip.
+```
+
+The two sourced motor-mass choices move CG by `0.000690621594 m` (0.691 mm).
+The machine fixture keeps `0.214337187028 m` as its primary expected value
+because Day 4 consumes Ascent's certified motor record, and stores the
+all-OpenRocket result alongside it as a cross-check.
 
 ## Machine-readable values
 

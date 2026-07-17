@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Ascent",
+  "version": "0.1.0",
+  "identifier": "app.ascent.desktop",
+  "build": {
+    "frontendDist": "../../app/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm --prefix ../../app run dev",
+    "beforeBuildCommand": "npm --prefix ../../app run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Ascent",
+        "width": 1280,
+        "height": 800
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false
+  }
+}
