@@ -42,6 +42,11 @@ impl Reference {
             .as_f64()
             .unwrap_or_else(|| panic!("missing vehicle value {key}"))
     }
+    fn chute(&self, key: &str) -> f64 {
+        self.fixture["vehicle"]["chute"][key]
+            .as_f64()
+            .unwrap_or_else(|| panic!("missing chute value {key}"))
+    }
 }
 
 /// Ascent configured to match the OpenRocket run: same liftoff mass, same
@@ -50,9 +55,7 @@ impl Reference {
 fn matched_setup(reference: &Reference) -> (Rocket, Motor, Environment, SimConfig) {
     let motor = Motor::from_json(C6_JSON).unwrap();
     let liftoff_mass_kg = reference.vehicle("liftoff_mass_g") / 1000.0;
-    let chute_d = reference.fixture["vehicle"]["chute"]["diameter_m"]
-        .as_f64()
-        .unwrap();
+    let chute_d = reference.chute("diameter_m");
     let rocket = Rocket {
         name: "OpenRocket simple model rocket".into(),
         // Hold total liftoff mass equal to OpenRocket's (its motor entry is
@@ -63,7 +66,7 @@ fn matched_setup(reference: &Reference) -> (Rocket, Motor, Environment, SimConfi
             reference_area_m2: reference.vehicle("reference_area_m2"),
         }),
         recovery: Some(Recovery {
-            chute_cd: reference.fixture["vehicle"]["chute"]["cd"].as_f64().unwrap(),
+            chute_cd: reference.chute("cd"),
             chute_area_m2: std::f64::consts::PI * (chute_d / 2.0) * (chute_d / 2.0),
         }),
     };
