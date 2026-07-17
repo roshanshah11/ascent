@@ -2,7 +2,7 @@
 //! audit a run — input hash, model identities, data provenance, explicit
 //! assumptions, and a live timestep-convergence check.
 
-use ascent_sim::{convergence_report, ConvergenceReport, SimConfig};
+use ascent_sim::{convergence_report, ConvergenceReport, NativeEngine, SimConfig, SimEngine};
 use serde::{Deserialize, Serialize};
 
 use crate::design::{build_flight, Design};
@@ -16,11 +16,19 @@ pub struct MotorEvidence {
     pub provenance: serde_json::Value,
 }
 
+/// Which solver produced the numbers — sourced from the SimEngine trait,
+/// never hardcoded, so bridge engines report themselves correctly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EngineEvidence {
+    pub id: String,
+    pub version: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EvidenceReport {
     /// SHA-256 of the canonical sim input — matches the run footer.
     pub input_hash: String,
-    pub engine: String,
+    pub engine: EngineEvidence,
     pub models: Vec<String>,
     pub assumptions: Vec<String>,
     pub motor: MotorEvidence,
@@ -33,13 +41,17 @@ pub fn evidence_for(design: &Design) -> Result<EvidenceReport, String> {
     let (rocket, motor, env) = build_flight(design)?;
     let config = SimConfig::default();
     let convergence = convergence_report(&rocket, &motor, &env, &config);
-    let result = ascent_sim::simulate_vertical(&rocket, &motor, &env, &config);
-    let summary = ascent_sim::SimSummary::from_result(&result, &rocket, &motor, &env, &config);
+    let engine: &dyn SimEngine = &NativeEngine;
+    let summary = engine.run(&rocket, &motor, &env, &config)?;
 
     Ok(EvidenceReport {
         input_hash: summary.input_hash,
-        engine: format!("ascent-sim {} · fixed-step RK4, dt {} s", env!("CARGO_PKG_VERSION"), config.dt_s),
+        engine: EngineEvidence {
+            id: engine.id().into(),
+            version: engine.version().into(),
+        },
         models: vec![
+            format!("Fixed-step RK4 integrator, dt {} s", config.dt_s),
             "US Standard Atmosphere 1976 (validated vs published density table)".into(),
             "Point-mass vertical flight: pad hold, rail phase, quadratic drag".into(),
             "Recovery: parachute deployed at apogee, quadratic chute drag".into(),
@@ -73,6 +85,15 @@ mod tests {
         assert_eq!(ev.input_hash, record.summary.input_hash, "evidence must describe the same run");
         assert!(ev.convergence.converged, "reference design must be timestep-converged");
         assert!(!ev.motor.provenance.is_null(), "motor provenance must be carried through");
+    }
+
+    #[test]
+    fn evidence_engine_comes_from_the_trait_not_a_hardcoded_string() {
+        let ev = evidence_for(&Design::reference()).unwrap();
+        let native = NativeEngine;
+        assert_eq!(ev.engine.id, native.id());
+        assert_eq!(ev.engine.version, native.version());
+        assert!(!ev.engine.version.is_empty());
     }
 
     #[test]

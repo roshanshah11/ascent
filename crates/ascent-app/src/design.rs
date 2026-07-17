@@ -4,8 +4,8 @@ use std::sync::{Mutex, OnceLock};
 
 use ascent_domain::{Motor, MotorRegistry};
 use ascent_sim::{
-    simulate_vertical, AtmosphereModel, DragModel, Environment, Recovery, Rocket, SimConfig,
-    SimSummary,
+    simulate_vertical, AtmosphereModel, DragModel, Environment, NativeEngine, Recovery, Rocket,
+    SimConfig, SimEngine, SimSummary,
 };
 use serde::{Deserialize, Serialize};
 
@@ -205,8 +205,13 @@ pub fn build_flight(design: &Design) -> Result<(Rocket, Motor, Environment), Str
 pub fn run_design(design: &Design) -> Result<RunRecord, String> {
     let (rocket, motor, env) = build_flight(design)?;
     let config = SimConfig::default();
+    // The recorded summary comes through the SimEngine seam — the same path
+    // future bridge engines use — while playback samples/events come from the
+    // raw solver result. NativeEngine::run is simulate_vertical + from_result,
+    // so the two stay byte-identical (proven in ascent-sim's engine tests).
+    let engine: &dyn SimEngine = &NativeEngine;
+    let summary = engine.run(&rocket, &motor, &env, &config)?;
     let result = simulate_vertical(&rocket, &motor, &env, &config);
-    let summary = SimSummary::from_result(&result, &rocket, &motor, &env, &config);
 
     let stride = result.samples.len().div_ceil(MAX_PLAYBACK_SAMPLES).max(1);
     let mut samples: Vec<PlaybackSample> = result

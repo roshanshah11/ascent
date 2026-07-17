@@ -32,7 +32,7 @@ export default function EvidenceDrawer({ design }: { design: Design }) {
             <code style={{ fontSize: 11 }}>{evidence.input_hash}</code>
           </div>
           <div>
-            <b>Engine</b> {evidence.engine}
+            <b>Engine</b> {evidence.engine.id} {evidence.engine.version}
           </div>
           <div>
             <b>Convergence</b>{" "}

@@ -68,7 +68,7 @@ export interface ConvergenceInfo {
 
 export interface EvidenceReport {
   input_hash: string;
-  engine: string;
+  engine: { id: string; version: string };
   models: string[];
   assumptions: string[];
   motor: {
