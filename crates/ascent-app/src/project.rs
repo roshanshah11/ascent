@@ -5,6 +5,9 @@
 //! project can prove whether a stored result is stale for its design.
 //! Format spec: docs/PROJECT_FORMAT.md.
 
+use std::fs;
+use std::path::{Path, PathBuf};
+
 use crate::design::{Design, RunRecord};
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +55,76 @@ pub fn from_toml(text: &str) -> Result<Project, String> {
     value
         .try_into()
         .map_err(|e| format!("could not read project: {e}"))
+}
+
+// ---- Autosave + crash recovery (v0.2 Step 8) ----------------------------
+//
+// MS-Office pattern: autosaves live in their own location, never the user's
+// file. A clean save/exit discards the autosave; if one survives to the next
+// launch, the app crashed and the user is offered a restore.
+
+/// Autosave is app-internal crash-recovery state, not the user's document,
+/// so it uses JSON: serializing a 100-run project in TOML costs ~340 ms
+/// (pretty tables for every playback sample) vs single-digit ms in JSON —
+/// and the 100 ms autosave budget is a hard acceptance bound. The user's
+/// `.ascent` file stays TOML.
+const RECOVERY_FILE: &str = "recovery.ascent.json";
+
+/// Where autosaves live: `~/.ascent/autosave` (HOME on unix, USERPROFILE on
+/// Windows), overridable with ASCENT_AUTOSAVE_DIR for tests and portability.
+fn autosave_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("ASCENT_AUTOSAVE_DIR") {
+        return PathBuf::from(dir);
+    }
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".into());
+    PathBuf::from(home).join(".ascent").join("autosave")
+}
+
+/// Atomic write into `dir`: serialize to a temp file, then rename. A crash
+/// mid-write leaves the previous autosave intact; rename on the same
+/// filesystem is atomic, so the recovery file is always complete TOML.
+pub fn autosave_in(dir: &Path, project: &Project) -> Result<PathBuf, String> {
+    let text = serde_json::to_string(project).map_err(|e| format!("autosave serialize: {e}"))?;
+    fs::create_dir_all(dir).map_err(|e| format!("cannot create autosave dir: {e}"))?;
+    let tmp = dir.join(format!("{RECOVERY_FILE}.tmp"));
+    let dest = dir.join(RECOVERY_FILE);
+    fs::write(&tmp, text).map_err(|e| format!("autosave write failed: {e}"))?;
+    fs::rename(&tmp, &dest).map_err(|e| format!("autosave rename failed: {e}"))?;
+    Ok(dest)
+}
+
+/// A surviving, parseable autosave means the last session did not exit
+/// cleanly. A corrupt one is treated as absent — recovery must never take
+/// down startup.
+pub fn find_recovery_in(dir: &Path) -> Option<(PathBuf, Project)> {
+    let path = dir.join(RECOVERY_FILE);
+    let text = fs::read_to_string(&path).ok()?;
+    serde_json::from_str(&text).ok().map(|p| (path, p))
+}
+
+/// Remove the autosave (clean save, clean exit, or user said discard).
+/// Missing file is fine — discard is idempotent.
+pub fn discard_recovery_in(dir: &Path) -> Result<(), String> {
+    let path = dir.join(RECOVERY_FILE);
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("could not discard autosave: {e}")),
+    }
+}
+
+pub fn autosave(project: &Project) -> Result<PathBuf, String> {
+    autosave_in(&autosave_dir(), project)
+}
+
+pub fn find_recovery() -> Option<(PathBuf, Project)> {
+    find_recovery_in(&autosave_dir())
+}
+
+pub fn discard_recovery() -> Result<(), String> {
+    discard_recovery_in(&autosave_dir())
 }
 
 #[cfg(test)]
@@ -104,6 +177,88 @@ mod tests {
     fn garbage_is_rejected_not_crashed() {
         assert!(from_toml("this is not toml [[[").is_err());
         assert!(from_toml("just_a_key = 1").is_err());
+    }
+
+    /// Unique per-test dir (avoids env-var races between test threads).
+    fn scratch_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir()
+            .join("ascent-autosave-tests")
+            .join(format!("{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn crashed_session_leaves_a_recoverable_autosave_that_roundtrips() {
+        let dir = scratch_dir("crash");
+        let p = sample_project();
+        let path = autosave_in(&dir, &p).unwrap();
+        assert!(path.exists());
+
+        // "Crash": no clean-exit discard runs. Next launch finds the file.
+        let (found_path, recovered) = find_recovery_in(&dir).expect("autosave must be found");
+        assert_eq!(found_path, path);
+        assert_eq!(to_toml(&recovered).unwrap(), to_toml(&p).unwrap());
+        assert_eq!(
+            recovered.runs[0].summary.input_hash,
+            p.runs[0].summary.input_hash,
+            "recovery must preserve run provenance"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn clean_save_discards_the_autosave_and_discard_is_idempotent() {
+        let dir = scratch_dir("clean");
+        autosave_in(&dir, &Project::new("wip")).unwrap();
+        assert!(find_recovery_in(&dir).is_some());
+
+        discard_recovery_in(&dir).unwrap();
+        assert!(find_recovery_in(&dir).is_none(), "clean save must clear recovery");
+        discard_recovery_in(&dir).expect("discarding nothing is not an error");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn interrupted_write_never_corrupts_the_previous_autosave() {
+        let dir = scratch_dir("atomic");
+        let good = sample_project();
+        autosave_in(&dir, &good).unwrap();
+
+        // Simulate a crash mid-write: a half-written temp file next to the
+        // real autosave. Recovery must ignore it and read the good file.
+        fs::write(dir.join("recovery.ascent.json.tmp"), "{\"schema_version\":").unwrap();
+        let (_, recovered) = find_recovery_in(&dir).expect("good autosave still present");
+        assert_eq!(to_toml(&recovered).unwrap(), to_toml(&good).unwrap());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn corrupt_autosave_is_treated_as_absent_not_fatal() {
+        let dir = scratch_dir("corrupt");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(RECOVERY_FILE), "not json {{{").unwrap();
+        assert!(find_recovery_in(&dir).is_none(), "corrupt recovery must not crash startup");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn autosave_of_a_hundred_run_project_is_fast() {
+        let dir = scratch_dir("perf");
+        let mut p = sample_project();
+        let record = p.runs[0].clone();
+        p.runs = std::iter::repeat_with(|| record.clone()).take(100).collect();
+
+        let start = std::time::Instant::now();
+        autosave_in(&dir, &p).unwrap();
+        let elapsed = start.elapsed();
+        // Acceptance: < 100 ms release; debug builds get slack but a slow
+        // serializer still fails loudly.
+        assert!(
+            elapsed.as_millis() < if cfg!(debug_assertions) { 1000 } else { 100 },
+            "autosave of 100-run project took {elapsed:?}"
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

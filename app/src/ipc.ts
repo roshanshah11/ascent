@@ -6,6 +6,7 @@ import type {
   DispersionSummary,
   EvidenceReport,
   MotorInfo,
+  Project,
   RepairResult,
   ReviewReport,
   RunRecord,
@@ -40,4 +41,16 @@ export function runDispersion(
   request: DispersionRequest,
 ): Promise<DispersionSummary> {
   return invoke<DispersionSummary>("run_dispersion", { design, request });
+}
+
+export function autosaveProject(project: Project): Promise<string> {
+  return invoke<string>("autosave_project", { project });
+}
+
+export function checkRecovery(): Promise<Project | null> {
+  return invoke<Project | null>("check_recovery");
+}
+
+export function discardRecovery(): Promise<void> {
+  return invoke<void>("discard_recovery");
 }

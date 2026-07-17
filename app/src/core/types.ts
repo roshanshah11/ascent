@@ -154,3 +154,10 @@ export interface DispersionSummary {
   landing_ellipse: { a_m: number; b_m: number; bearing_deg: number };
   runs: CompactRun[];
 }
+
+export interface Project {
+  schema_version: number;
+  name: string;
+  designs: Design[];
+  runs: RunRecord[];
+}

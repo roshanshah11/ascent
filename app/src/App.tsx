@@ -17,8 +17,15 @@ import {
   type CommandHistory,
 } from "./core/commands";
 import { initialRunStatus, reduceRunStatus } from "./core/runState";
-import type { Design, MotorInfo, RunRecord } from "./core/types";
-import { fetchMotors, fetchReferenceDesign, runSimulation } from "./ipc";
+import type { Design, MotorInfo, Project, RunRecord } from "./core/types";
+import {
+  autosaveProject,
+  checkRecovery,
+  discardRecovery,
+  fetchMotors,
+  fetchReferenceDesign,
+  runSimulation,
+} from "./ipc";
 
 const STATE_BADGE: Record<string, { label: string; color: string }> = {
   current: { label: "Current", color: "#3fb950" },
@@ -38,10 +45,38 @@ export default function App() {
   // so the ref never needs to trigger renders itself — setDesign does that.
   const historyRef = useRef<CommandHistory>(emptyHistory);
   const [, bumpHistory] = useReducer((n: number) => n + 1, 0);
+  const [recovery, setRecovery] = useState<Project | null>(null);
+  // Latest state for the autosave interval, without re-arming the timer on
+  // every render.
+  const autosaveRef = useRef<{ design: Design | null; record: RunRecord | null; dirty: boolean }>({
+    design: null,
+    record: null,
+    dirty: false,
+  });
+  autosaveRef.current = { design, record, dirty: status.state === "dirty" };
 
   useEffect(() => {
     fetchReferenceDesign().then(setDesign).catch((e) => setError(String(e)));
     fetchMotors().then(setMotors).catch((e) => setError(String(e)));
+    // A surviving autosave means the last session crashed — offer a restore.
+    checkRecovery().then(setRecovery).catch(() => {});
+  }, []);
+
+  // MS-Office style autosave: every 30 s, if there are unsaved edits, write
+  // the crash-recovery file. Never touches the user's own project file.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const { design: d, record: r, dirty } = autosaveRef.current;
+      if (!d || !dirty) return;
+      const project: Project = {
+        schema_version: 1,
+        name: d.name,
+        designs: [d],
+        runs: r ? [r] : [],
+      };
+      autosaveProject(project).catch(() => {});
+    }, 30_000);
+    return () => clearInterval(timer);
   }, []);
 
   if (!design) {
@@ -104,6 +139,24 @@ export default function App() {
     }
   };
 
+  const restoreRecovery = () => {
+    if (!recovery) return;
+    if (recovery.designs.length > 0) {
+      setDesign(recovery.designs[0]);
+    }
+    setRecord(recovery.runs.length > 0 ? recovery.runs[recovery.runs.length - 1] : null);
+    historyRef.current = emptyHistory;
+    bumpHistory();
+    dispatch({ type: "EDIT" }); // Restored work is unsaved work.
+    setRecovery(null);
+    discardRecovery().catch(() => {});
+  };
+
+  const dismissRecovery = () => {
+    setRecovery(null);
+    discardRecovery().catch(() => {});
+  };
+
   const badge = STATE_BADGE[status.state];
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -155,6 +208,27 @@ export default function App() {
           </button>
         </nav>
       </header>
+
+      {recovery && (
+        <div
+          style={{
+            border: "1px solid #e8a33d",
+            borderRadius: 6,
+            padding: "8px 12px",
+            marginBottom: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <span>
+            Ascent didn't exit cleanly last time. Restore the autosaved
+            project “{recovery.name}”?
+          </span>
+          <button onClick={restoreRecovery}>Restore</button>
+          <button onClick={dismissRecovery}>Discard</button>
+        </div>
+      )}
 
       {error && <div style={{ color: "#c74b3c", marginBottom: 12 }}>{error}</div>}
 

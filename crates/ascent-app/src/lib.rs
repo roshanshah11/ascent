@@ -59,6 +59,22 @@ fn load_project(contents: String) -> Result<Project, String> {
 }
 
 #[tauri::command]
+fn autosave_project(project: Project) -> Result<String, String> {
+    project::autosave(&project).map(|p| p.display().to_string())
+}
+
+/// A surviving autosave from a crashed session, if any.
+#[tauri::command]
+fn check_recovery() -> Option<Project> {
+    project::find_recovery().map(|(_, p)| p)
+}
+
+#[tauri::command]
+fn discard_recovery() -> Result<(), String> {
+    project::discard_recovery()
+}
+
+#[tauri::command]
 fn flight_review(target_apogee_m: f64) -> Result<ReviewReport, String> {
     review_ipc::report(target_apogee_m)
 }
@@ -80,6 +96,9 @@ pub fn run() {
             run_dispersion,
             save_project,
             load_project,
+            autosave_project,
+            check_recovery,
+            discard_recovery,
             flight_review,
             solve_review
         ])
