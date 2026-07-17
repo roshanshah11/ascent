@@ -139,12 +139,6 @@ export default function App() {
         <button onClick={doRedo} disabled={!canRedo(historyRef.current)} title="Redo (⇧⌘Z)">
           Redo
         </button>
-        <button onClick={doUndo} disabled={!canUndo(historyRef.current)} title="Undo (⌘Z)">
-          Undo
-        </button>
-        <button onClick={doRedo} disabled={!canRedo(historyRef.current)} title="Redo (⇧⌘Z)">
-          Redo
-        </button>
         <nav style={{ marginLeft: "auto" }}>
           <button onClick={() => setMode("design")} disabled={mode === "design"}>
             Design

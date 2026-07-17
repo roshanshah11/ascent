@@ -8,7 +8,7 @@ mod evidence;
 mod project;
 mod review_ipc;
 
-pub use design::{run_design, Design, MotorInfo, RunRecord};
+pub use design::{run_design, Design, ImportedMotor, MotorInfo, RunRecord};
 pub use project::{from_toml, to_toml, Project};
 pub use evidence::{evidence_for, EvidenceReport};
 pub use review_ipc::{repair as review_repair, report as review_report, ReviewReport};
@@ -26,6 +26,11 @@ fn list_motors() -> Vec<MotorInfo> {
 #[tauri::command]
 fn run_simulation(design: Design) -> Result<RunRecord, String> {
     run_design(&design)
+}
+
+#[tauri::command]
+fn import_motor_file(contents: String) -> Result<ImportedMotor, String> {
+    design::import_motor_file(&contents)
 }
 
 #[tauri::command]
@@ -60,6 +65,7 @@ pub fn run() {
             reference_design,
             list_motors,
             run_simulation,
+            import_motor_file,
             run_evidence,
             save_project,
             load_project,

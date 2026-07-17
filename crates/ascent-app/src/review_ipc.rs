@@ -14,10 +14,7 @@ fn rules() -> Result<RulePack, String> {
 }
 
 fn motors() -> Vec<Motor> {
-    crate::design::MOTOR_SOURCES
-        .iter()
-        .filter_map(|s| Motor::from_json(s).ok())
-        .collect()
+    crate::design::session_motors()
 }
 
 /// The demo review vehicle: light 25 mm sport rocket flown from IREC's

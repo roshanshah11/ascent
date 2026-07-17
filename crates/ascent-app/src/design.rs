@@ -1,18 +1,34 @@
 //! Design DTO (what the UI edits) and its mapping onto the sim crates.
 
-use ascent_domain::Motor;
+use std::sync::{Mutex, OnceLock};
+
+use ascent_domain::{Motor, MotorRegistry};
 use ascent_sim::{
     simulate_vertical, AtmosphereModel, DragModel, Environment, Recovery, Rocket, SimConfig,
     SimSummary,
 };
 use serde::{Deserialize, Serialize};
 
-const C6_JSON: &str = include_str!("../../ascent-domain/data/motors/estes_c6.json");
-const B6_JSON: &str = include_str!("../../ascent-domain/data/motors/estes_b6.json");
-const D12_JSON: &str = include_str!("../../ascent-domain/data/motors/estes_d12.json");
+/// The app's motor catalog for this process: starts from the bundled
+/// C6/B6/D12 stock set (Codex task A4) and grows as `.eng` files are
+/// imported through the `import_motor_file` IPC command. Later
+/// `run_simulation`/`flight_review` calls in the same session can find
+/// anything imported earlier.
+fn session_registry() -> &'static Mutex<MotorRegistry> {
+    static REGISTRY: OnceLock<Mutex<MotorRegistry>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(MotorRegistry::bundled()))
+}
 
-/// Motors bundled with the app (provenance-preserved JSON, Codex task A4).
-pub const MOTOR_SOURCES: &[&str] = &[C6_JSON, B6_JSON, D12_JSON];
+/// Lock the session registry, recovering from poisoning. All mutations go
+/// through `register_eng`, which validates every motor before inserting any,
+/// so a panic elsewhere while the lock was held cannot leave the map in a
+/// half-written state — recovering beats bricking every IPC command for the
+/// rest of the process.
+fn lock_registry() -> std::sync::MutexGuard<'static, MotorRegistry> {
+    session_registry()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChuteSpec {
@@ -61,26 +77,63 @@ pub struct MotorInfo {
     pub total_mass_g: f64,
 }
 
+fn motor_info(m: &Motor) -> MotorInfo {
+    MotorInfo {
+        designation: m.designation.clone(),
+        manufacturer: m.manufacturer.clone(),
+        total_impulse_ns: m.total_impulse(),
+        burn_time_s: m.burn_time(),
+        total_mass_g: m.total_mass_kg * 1000.0,
+    }
+}
+
 pub fn bundled_motors() -> Vec<MotorInfo> {
-    MOTOR_SOURCES
-        .iter()
-        .filter_map(|src| Motor::from_json(src).ok())
-        .map(|m| MotorInfo {
-            designation: m.designation.clone(),
-            manufacturer: m.manufacturer.clone(),
-            total_impulse_ns: m.total_impulse(),
-            burn_time_s: m.burn_time(),
-            total_mass_g: m.total_mass_kg * 1000.0,
-        })
-        .collect()
+    let registry = lock_registry();
+    registry.list().into_iter().map(motor_info).collect()
+}
+
+/// All motors currently known to the session registry (bundled plus any
+/// imported this session), cloned out for callers like `review_ipc` that
+/// need to search by designation.
+pub(crate) fn session_motors() -> Vec<Motor> {
+    let registry = lock_registry();
+    registry.list().into_iter().cloned().collect()
 }
 
 fn find_motor(designation: &str) -> Result<Motor, String> {
-    MOTOR_SOURCES
-        .iter()
-        .filter_map(|src| Motor::from_json(src).ok())
-        .find(|m| m.designation == designation)
+    let registry = lock_registry();
+    registry
+        .get(designation)
+        .cloned()
         .ok_or_else(|| format!("unknown motor: {designation}"))
+}
+
+/// Result of importing a `.eng` file over IPC: the lead motor plus any
+/// designations the import overwrote (bundled or previously imported), so
+/// the UI can warn instead of silently swapping a reference motor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportedMotor {
+    pub motor: MotorInfo,
+    pub replaced: Vec<String>,
+}
+
+/// Parse and register a RASP `.eng` file's motor(s) into the session
+/// registry, returning info for the first motor parsed. Subsequent
+/// `run_simulation`/`flight_review` calls can reference it by designation.
+pub fn import_motor_file(contents: &str) -> Result<ImportedMotor, String> {
+    let provenance = serde_json::json!({
+        "source": "user-imported RASP .eng file",
+        "format": "RASP thrust-curve text",
+    });
+    let mut registry = lock_registry();
+    let outcome = registry.register_eng(contents, provenance)?;
+    let motor = registry
+        .get(&outcome.first_designation)
+        .expect("just-registered motor must be present");
+    Ok(ImportedMotor {
+        motor: motor_info(motor),
+        replaced: outcome.replaced,
+    })
 }
 
 /// One playback sample. Downsampled for the UI; the summary keeps the
@@ -241,7 +294,35 @@ mod tests {
                 "missing bundled motor {designation}"
             );
         }
-        assert_eq!(motors.len(), MOTOR_SOURCES.len(), "a bundled motor failed to parse");
+        // No exact-length assertion: the session registry is process-global,
+        // so other tests in this binary may have imported motors already.
+    }
+
+    #[test]
+    fn imported_eng_motor_flies_end_to_end_with_provenance() {
+        // The full IPC path: import a .eng file, fly it, audit the evidence.
+        let d10 = include_str!("../../../data/eng-samples/openrocket_d10.eng");
+        let imported = import_motor_file(d10).unwrap();
+        assert_eq!(imported.motor.designation, "D10");
+        assert!(imported.motor.total_impulse_ns > 0.0);
+        assert!(
+            imported.replaced.is_empty(),
+            "D10 is not bundled, so nothing should be replaced"
+        );
+
+        let mut design = Design::reference();
+        design.motor_designation = "D10".into();
+        let record = run_design(&design).unwrap();
+        assert!(record.summary.apogee_m > 50.0, "imported D10 should lift off");
+        assert_eq!(record.summary.input_hash.len(), 64);
+
+        let ev = crate::evidence::evidence_for(&design).unwrap();
+        assert_eq!(ev.motor.designation, "D10");
+        let prov = serde_json::to_string(&ev.motor.provenance).unwrap();
+        assert!(
+            prov.contains("user-imported"),
+            "evidence must carry the import provenance, got: {prov}"
+        );
     }
 
     #[test]
