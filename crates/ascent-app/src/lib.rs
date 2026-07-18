@@ -12,6 +12,7 @@ mod document;
 mod evidence;
 mod jobs;
 mod project;
+mod propose;
 mod review_ipc;
 mod study;
 
@@ -19,6 +20,7 @@ pub use command::Command;
 pub use credibility::{Factor, QuantityFlag, Regime, Scorecard};
 pub use document::{Document, DocumentState};
 pub use jobs::{JobEvent, JobId, JobRunner, JobStatus, JobView};
+pub use propose::{apply_batch, propose_batch, CommandCheck, DiffSummary, Proposal};
 pub use study::{study_input_hash, Study, StudyId, StudyKind, StudyResults};
 pub use design::{run_design, Design, ImportedMotor, MotorInfo, RunRecord, SpreadResult};
 pub use dispersion_ipc::DispersionRequest;
@@ -79,6 +81,34 @@ fn console_exec(state: DocState, line: String) -> Result<DocumentState, String> 
     let mut doc = doc_lock(&state);
     doc.dispatch(command)?;
     Ok(doc.state())
+}
+
+/// Copilot seam: dry-run a command batch, mutating nothing. Batches are
+/// journal-grammar text lines, one command per entry.
+#[tauri::command]
+fn propose_commands(state: DocState, lines: Vec<String>) -> Result<Proposal, String> {
+    let commands = parse_batch(&lines)?;
+    Ok(propose_batch(&doc_lock(&state), &commands))
+}
+
+/// Copilot seam: apply a previously proposed batch atomically. The batch
+/// is re-validated first; on any error the document is untouched.
+#[tauri::command]
+fn apply_proposal(state: DocState, lines: Vec<String>) -> Result<DocumentState, String> {
+    let commands = parse_batch(&lines)?;
+    let mut doc = doc_lock(&state);
+    apply_batch(&mut doc, &commands)?;
+    Ok(doc.state())
+}
+
+fn parse_batch(lines: &[String]) -> Result<Vec<Command>, String> {
+    lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            Command::parse_text(line).map_err(|e| format!("line {}: {e}", i + 1))
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -199,6 +229,8 @@ pub fn run() {
             redo_document,
             session_journal,
             console_exec,
+            propose_commands,
+            apply_proposal,
             list_motors,
             run_simulation,
             run_spread,
