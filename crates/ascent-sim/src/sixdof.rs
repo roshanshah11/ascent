@@ -132,6 +132,15 @@ impl SixDofEngine {
         if vehicle.cn_alpha_per_rad < 0.0 {
             return Err("CN-alpha must be non-negative".into());
         }
+        if vehicle.cg_from_nose_m < 0.0 {
+            return Err("CG from nose must be non-negative".into());
+        }
+        if vehicle.cp_from_nose_m < 0.0 {
+            return Err("CP from nose must be non-negative".into());
+        }
+        if !(0.0..=std::f64::consts::FRAC_PI_4).contains(&launch.tilt_rad) {
+            return Err("launch tilt must be within the 0 to 45 degree envelope".into());
+        }
         for layer in &wind.layers {
             if !layer.altitude_m.is_finite()
                 || layer
@@ -221,6 +230,19 @@ impl SixDofEngine {
 
             let from_rail_distance = dot3(vector3(state, POSITION), rail_axis);
             let to_rail_distance = dot3(vector3(next, POSITION), rail_axis);
+            if phase == FlightPhase::Rail && from_rail_distance > 0.0 && to_rail_distance <= 0.0 {
+                let frac =
+                    (from_rail_distance / (from_rail_distance - to_rail_distance)).clamp(0.0, 1.0);
+                state = interpolate_state(state, next, frac)?;
+                constrain_rail_state(&mut state, rail_axis, launch_attitude, true);
+                state[POSITION..POSITION + 3].fill(0.0);
+                state[VELOCITY..VELOCITY + 3].fill(0.0);
+                t += frac * dt;
+                phase = FlightPhase::Pad;
+                steps += 1;
+                history.push(sample(t, state, phase));
+                continue;
+            }
             if phase == FlightPhase::Rail
                 && from_rail_distance < env.rail_length_m
                 && to_rail_distance >= env.rail_length_m
@@ -246,7 +268,7 @@ impl SixDofEngine {
                 ));
             }
 
-            if matches!(phase, FlightPhase::Ascent | FlightPhase::Rail)
+            if phase == FlightPhase::Ascent
                 && state[VELOCITY + 2] > 0.0
                 && next[VELOCITY + 2] <= 0.0
             {
@@ -438,17 +460,21 @@ fn derivative(
         let air_body = rotate_inertial_to_body(attitude, relative_air)?;
         let axial = air_body[2];
         if axial > 1e-3 {
+            let lateral = [air_body[0], air_body[1]];
+            let lateral_speed = (lateral[0] * lateral[0] + lateral[1] * lateral[1]).sqrt();
+            let alpha = lateral_speed.atan2(axial);
             let dynamic_scale = 0.5
                 * density
                 * airspeed
                 * airspeed
                 * vehicle.reference_area_m2
                 * vehicle.cn_alpha_per_rad;
-            let normal_body = [
-                -dynamic_scale * air_body[0] / axial,
-                -dynamic_scale * air_body[1] / axial,
-                0.0,
-            ];
+            let normal_scale = if lateral_speed > 1e-12 {
+                -dynamic_scale * alpha / lateral_speed
+            } else {
+                0.0
+            };
+            let normal_body = [normal_scale * lateral[0], normal_scale * lateral[1], 0.0];
             force_inertial = add3(
                 force_inertial,
                 rotate_body_to_inertial(attitude, normal_body)?,
@@ -726,4 +752,69 @@ fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 fn norm3(vector: [f64; 3]) -> f64 {
     dot3(vector, vector).sqrt()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::AtmosphereModel;
+
+    #[test]
+    fn barrowman_normal_force_is_linear_in_angle_of_attack() {
+        let motor = Motor::from_json(include_str!(
+            "../../ascent-domain/data/motors/estes_c6.json"
+        ))
+        .unwrap();
+        let rocket = Rocket {
+            name: "force-law fixture".into(),
+            dry_mass_kg: 1.0,
+            drag: None,
+            recovery: None,
+        };
+        let env = Environment {
+            gravity_ms2: 0.0,
+            atmosphere: AtmosphereModel::ConstantDensity(1.0),
+            rail_length_m: 1.0,
+        };
+        let vehicle = SixDofVehicle {
+            cg_from_nose_m: 0.1,
+            pitch_yaw_inertia_kgm2: 1.0,
+            cp_from_nose_m: 0.1,
+            cn_alpha_per_rad: 1.0,
+            reference_area_m2: 1.0,
+        };
+        let mut state = [0.0; STATE_LEN];
+        state[VELOCITY..VELOCITY + 3].copy_from_slice(&[6.0, 8.0, 10.0]);
+        state[ATTITUDE] = 1.0;
+
+        let rate = derivative(
+            motor.burn_time(),
+            state,
+            FlightPhase::Ascent,
+            &rocket,
+            &motor,
+            &env,
+            &vehicle,
+            &Wind3DProfile::calm(),
+            [0.0, 0.0, 1.0],
+        )
+        .unwrap();
+        let mass = rocket.dry_mass_kg + motor.mass_at(motor.burn_time());
+        let actual_normal_force = [
+            rate[VELOCITY] * mass,
+            rate[VELOCITY + 1] * mass,
+            rate[VELOCITY + 2] * mass,
+        ];
+        let magnitude = -100.0 * std::f64::consts::FRAC_PI_4;
+        let expected_normal_force = [magnitude * 0.6, magnitude * 0.8, 0.0];
+
+        for axis in 0..3 {
+            assert!(
+                (actual_normal_force[axis] - expected_normal_force[axis]).abs() <= 1e-12,
+                "normal force {:?} N must equal 3D linear-alpha force {:?} N",
+                actual_normal_force,
+                expected_normal_force,
+            );
+        }
+    }
 }

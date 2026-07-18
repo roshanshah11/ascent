@@ -219,9 +219,49 @@ fn two_in_plane_fixtures_match_planar_within_declared_residual_gates() {
 #[test]
 fn tilted_rail_history_is_finite_bounded_and_roll_free() {
     let (rocket, env) = alpha_iii();
-    let result = engine_for(2.0, 5.0_f64.to_radians())
-        .run_detailed(&rocket, &c6(), &env, &SimConfig::default())
-        .unwrap();
+    let motor = c6();
+    let config = SimConfig::default();
+    let engine = engine_for(2.0, 5.0_f64.to_radians());
+    let result = engine.run_detailed(&rocket, &motor, &env, &config).unwrap();
+    let repeated = engine.run_detailed(&rocket, &motor, &env, &config).unwrap();
+
+    assert_eq!(
+        serde_json::to_vec(&result).unwrap(),
+        serde_json::to_vec(&repeated).unwrap(),
+        "tilted fixture must produce a byte-identical result and history"
+    );
+
+    let max_speed_ms = result
+        .history
+        .iter()
+        .map(|sample| {
+            sample
+                .velocity_ms
+                .iter()
+                .map(|component| component * component)
+                .sum::<f64>()
+                .sqrt()
+        })
+        .fold(0.0_f64, f64::max);
+    let max_pitch_rate = result
+        .history
+        .iter()
+        .map(|sample| sample.angular_rate_rad_s[1].abs())
+        .fold(0.0_f64, f64::max);
+    let max_yaw_rate = result
+        .history
+        .iter()
+        .map(|sample| sample.angular_rate_rad_s[0].abs())
+        .fold(0.0_f64, f64::max);
+
+    // Fixture-specific regression bounds detect large finite excursions. They
+    // do not validate roll, crossrange, or recovery-attitude physics.
+    assert!((360.7..=360.9).contains(&result.summary.apogee_m));
+    assert!((208.0..=208.3).contains(&result.landing_position_m[0]));
+    assert!(result.landing_position_m[1].abs() <= 1e-10);
+    assert!((112.9..=113.2).contains(&max_speed_ms));
+    assert!((1.85..=1.91).contains(&max_pitch_rate));
+    assert!(max_yaw_rate <= 1e-10);
 
     assert!(result.summary.apogee_m.is_finite() && result.summary.apogee_m > 0.0);
     assert!(result.summary.landing_time_s > result.summary.apogee_time_s);
@@ -265,4 +305,76 @@ fn invalid_configured_parameters_are_rejected_before_integration() {
         )
         .unwrap_err()
         .contains("timestep"));
+
+    let mut negative_cg = tree_vehicle();
+    negative_cg.cg_from_nose_m = -f64::EPSILON;
+    assert!(
+        SixDofEngine::new(negative_cg, Wind3DProfile::calm(), SixDofLaunch::vertical(),)
+            .err()
+            .unwrap()
+            .contains("CG")
+    );
+
+    let mut negative_cp = tree_vehicle();
+    negative_cp.cp_from_nose_m = -f64::EPSILON;
+    assert!(
+        SixDofEngine::new(negative_cp, Wind3DProfile::calm(), SixDofLaunch::vertical(),)
+            .err()
+            .unwrap()
+            .contains("CP")
+    );
+
+    for invalid_tilt in [-f64::EPSILON, std::f64::consts::FRAC_PI_4 + 1e-12] {
+        assert!(SixDofEngine::new(
+            tree_vehicle(),
+            Wind3DProfile::calm(),
+            SixDofLaunch {
+                tilt_rad: invalid_tilt,
+                azimuth_rad: 0.0,
+            },
+        )
+        .err()
+        .unwrap()
+        .contains("launch tilt"));
+    }
+
+    SixDofEngine::new(
+        tree_vehicle(),
+        Wind3DProfile::calm(),
+        SixDofLaunch {
+            tilt_rad: std::f64::consts::FRAC_PI_4,
+            azimuth_rad: 0.0,
+        },
+    )
+    .expect("45 degree launch tilt is the inclusive validity boundary");
+}
+
+#[test]
+fn long_rail_reversal_stays_constrained_without_free_flight_events() {
+    let engine = configured_engine();
+    let (rocket, mut env) = alpha_iii();
+    env.rail_length_m = 1_000.0;
+
+    let result = engine
+        .run_detailed(&rocket, &c6(), &env, &SimConfig::default())
+        .unwrap();
+
+    assert!(result.summary.events.iter().all(|event| !matches!(
+        event.kind.as_str(),
+        "RailExit" | "Apogee" | "RecoveryDeploy" | "Landing"
+    )));
+    assert!(result
+        .history
+        .iter()
+        .all(|sample| matches!(sample.phase, FlightPhase::Pad | FlightPhase::Rail)));
+    let final_sample = result.history.last().unwrap();
+    assert_eq!(final_sample.phase, FlightPhase::Pad);
+    assert!(final_sample
+        .position_m
+        .iter()
+        .all(|value| value.abs() <= 1e-12));
+    assert!(final_sample
+        .velocity_ms
+        .iter()
+        .all(|value| value.abs() <= 1e-12));
 }
