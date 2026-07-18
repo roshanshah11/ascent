@@ -36,6 +36,16 @@ pub struct SimSummary {
     pub sim_version: String,
 }
 
+/// SHA-256 over a value's canonical JSON form. The one hashing primitive
+/// for provenance: run summaries and study staleness both use it, so
+/// "same inputs → same hash" means the same thing everywhere.
+pub fn content_hash<T: Serialize>(value: &T) -> String {
+    let bytes = serde_json::to_vec(value).expect("hash inputs serialize");
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    format!("{:x}", hasher.finalize())
+}
+
 /// SHA-256 of the canonical serialized inputs. Same inputs → same hash.
 pub fn input_hash(
     rocket: &Rocket,
@@ -43,16 +53,12 @@ pub fn input_hash(
     env: &Environment,
     config: &SimConfig,
 ) -> String {
-    let canonical = serde_json::json!({
+    content_hash(&serde_json::json!({
         "rocket": rocket,
         "motor": motor,
         "environment": env,
         "config": config,
-    });
-    let bytes = serde_json::to_vec(&canonical).expect("inputs serialize");
-    let mut hasher = Sha256::new();
-    hasher.update(&bytes);
-    format!("{:x}", hasher.finalize())
+    }))
 }
 
 impl SimSummary {

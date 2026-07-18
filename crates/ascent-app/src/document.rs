@@ -6,6 +6,7 @@
 
 use crate::command::{apply, Applied, Command};
 use crate::design::Design;
+use crate::study::Study;
 use ascent_domain::vehicle::{reference_vehicle, Vehicle};
 use serde::{Deserialize, Serialize};
 
@@ -33,7 +34,9 @@ struct JournalHeader {
 pub struct Document {
     pub vehicle: Vehicle,
     pub design: Design,
+    pub studies: Vec<Study>,
     next_part_id: u32,
+    next_study_id: u32,
     past: Vec<AppliedPair>,
     future: Vec<AppliedPair>,
     #[serde(skip)]
@@ -51,6 +54,7 @@ struct AppliedPair {
 pub struct DocumentState {
     pub vehicle: Vehicle,
     pub design: Design,
+    pub studies: Vec<Study>,
     pub can_undo: bool,
     pub can_redo: bool,
 }
@@ -62,7 +66,9 @@ impl Default for Document {
         Document {
             vehicle,
             design: Design::reference(),
+            studies: Vec::new(),
             next_part_id,
+            next_study_id: 1,
             past: Vec::new(),
             future: Vec::new(),
             journal: Vec::new(),
@@ -86,7 +92,9 @@ impl Document {
         let Applied { forward, inverse } = apply(
             &mut self.vehicle,
             &mut self.design,
+            &mut self.studies,
             &mut self.next_part_id,
+            &mut self.next_study_id,
             cmd.clone(),
         )?;
         self.past.push(AppliedPair { forward, inverse });
@@ -100,10 +108,13 @@ impl Document {
             return false;
         };
         let mut scratch_id = self.next_part_id;
+        let mut scratch_study_id = self.next_study_id;
         let undone = apply(
             &mut self.vehicle,
             &mut self.design,
+            &mut self.studies,
             &mut scratch_id,
+            &mut scratch_study_id,
             pair.inverse.clone(),
         )
         .expect("inverse of an applied command must apply");
@@ -120,10 +131,13 @@ impl Document {
             return false;
         };
         let mut scratch_id = self.next_part_id;
+        let mut scratch_study_id = self.next_study_id;
         apply(
             &mut self.vehicle,
             &mut self.design,
+            &mut self.studies,
             &mut scratch_id,
+            &mut scratch_study_id,
             pair.forward.clone(),
         )
         .expect("a previously applied command must re-apply");
@@ -136,6 +150,7 @@ impl Document {
         DocumentState {
             vehicle: self.vehicle.clone(),
             design: self.design.clone(),
+            studies: self.studies.clone(),
             can_undo: !self.past.is_empty(),
             can_redo: !self.future.is_empty(),
         }
@@ -383,6 +398,153 @@ mod tests {
         assert_eq!(doc.design.motor_designation, "B6");
         doc.undo();
         assert_eq!(doc.design.motor_designation, "C6");
+    }
+
+    fn create_dispersion_study(doc: &mut Document) {
+        doc.dispatch(Command::CreateStudy {
+            name: "landing spread".into(),
+            kind: crate::study::StudyKind::Dispersion { flights: 1000 },
+            engine: "native".into(),
+            seed: 42,
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn study_crud_is_undoable() {
+        use crate::study::StudyId;
+        let mut doc = Document::default();
+        let before = doc.canonical_bytes();
+
+        // Create → undo removes it → redo restores the identical study.
+        create_dispersion_study(&mut doc);
+        assert_eq!(doc.studies.len(), 1);
+        assert_eq!(doc.studies[0].id, StudyId(1));
+        let after_create = doc.canonical_bytes();
+        assert!(doc.undo());
+        assert!(doc.studies.is_empty());
+        assert!(doc.redo());
+        assert_eq!(doc.canonical_bytes(), after_create);
+
+        // Param edit round-trips through undo.
+        doc.dispatch(Command::SetStudyParam {
+            id: StudyId(1),
+            param: "seed".into(),
+            value: json!(7),
+        })
+        .unwrap();
+        assert_eq!(doc.studies[0].seed, 7);
+        doc.undo();
+        assert_eq!(doc.studies[0].seed, 42);
+
+        // Delete → undo restores at the same index with results intact.
+        doc.dispatch(Command::SetStudyResults {
+            id: StudyId(1),
+            results: Some(crate::study::StudyResults {
+                input_hash: "h".into(),
+                data: json!({ "p50": 300.0 }),
+            }),
+        })
+        .unwrap();
+        // (Compare the studies, not canonical bytes — undoing a delete
+        // legitimately leaves the redo stack populated.)
+        let with_results = doc.studies.clone();
+        doc.dispatch(Command::DeleteStudy { id: StudyId(1) }).unwrap();
+        assert!(doc.studies.is_empty());
+        assert!(doc.undo());
+        assert_eq!(doc.studies, with_results);
+
+        // Full unwind returns to the pristine document (ids stay
+        // monotonic, so compare trees/state, not the counter).
+        while doc.undo() {}
+        assert!(doc.studies.is_empty());
+        assert_eq!(doc.vehicle, Document::default().vehicle);
+        let _ = before;
+    }
+
+    #[test]
+    fn study_params_reject_identity_and_results() {
+        use crate::study::StudyId;
+        let mut doc = Document::default();
+        create_dispersion_study(&mut doc);
+        for (param, needle) in [
+            ("id", "fixed"),
+            ("results", "set_study_results"),
+            ("flights", "no parameter"),
+        ] {
+            let err = doc
+                .dispatch(Command::SetStudyParam {
+                    id: StudyId(1),
+                    param: param.into(),
+                    value: json!(1),
+                })
+                .unwrap_err();
+            assert!(err.contains(needle), "{param}: {err}");
+        }
+    }
+
+    #[test]
+    fn study_input_hash_goes_stale_when_the_tree_changes() {
+        use crate::study::{study_input_hash, StudyId, StudyResults};
+        let mut doc = Document::default();
+        create_dispersion_study(&mut doc);
+
+        // Land results stamped with the current input hash.
+        let hash = study_input_hash(&doc.vehicle, &doc.design, &doc.studies[0]);
+        doc.dispatch(Command::SetStudyResults {
+            id: StudyId(1),
+            results: Some(StudyResults {
+                input_hash: hash,
+                data: json!({ "p50": 300.0 }),
+            }),
+        })
+        .unwrap();
+        assert!(
+            !doc.studies[0].is_stale(&doc.vehicle, &doc.design),
+            "freshly stamped results are current"
+        );
+
+        // Edit the vehicle tree → the stored hash no longer matches.
+        doc.dispatch(Command::SetPartParam {
+            id: PartId(3),
+            param: "span_m".into(),
+            value: json!(0.05),
+        })
+        .unwrap();
+        assert!(
+            doc.studies[0].is_stale(&doc.vehicle, &doc.design),
+            "tree edit must invalidate stored study results"
+        );
+
+        // Undo the edit → results are provably current again.
+        doc.undo();
+        assert!(!doc.studies[0].is_stale(&doc.vehicle, &doc.design));
+    }
+
+    #[test]
+    fn journal_with_study_commands_replays_byte_identically() {
+        use crate::study::StudyId;
+        let mut doc = Document::default();
+        create_dispersion_study(&mut doc);
+        doc.dispatch(Command::SetStudyParam {
+            id: StudyId(1),
+            param: "name".into(),
+            value: json!("renamed"),
+        })
+        .unwrap();
+        doc.undo();
+        doc.dispatch(Command::CreateStudy {
+            name: "second".into(),
+            kind: crate::study::StudyKind::SingleFlight,
+            engine: "native".into(),
+            seed: 0,
+        })
+        .unwrap();
+        doc.dispatch(Command::DeleteStudy { id: StudyId(1) }).unwrap();
+        doc.undo();
+        doc.redo();
+        let replayed = Document::replay(&doc.journal_jsonl()).unwrap();
+        assert_eq!(replayed.canonical_bytes(), doc.canonical_bytes());
     }
 
     #[test]

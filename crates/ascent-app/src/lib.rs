@@ -11,10 +11,12 @@ mod document;
 mod evidence;
 mod project;
 mod review_ipc;
+mod study;
 
 pub use command::Command;
 pub use credibility::{Factor, QuantityFlag, Regime, Scorecard};
 pub use document::{Document, DocumentState};
+pub use study::{study_input_hash, Study, StudyId, StudyKind, StudyResults};
 pub use design::{run_design, Design, ImportedMotor, MotorInfo, RunRecord, SpreadResult};
 pub use dispersion_ipc::DispersionRequest;
 pub use project::{from_toml, to_toml, Project};

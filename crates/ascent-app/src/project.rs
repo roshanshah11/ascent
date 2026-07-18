@@ -9,11 +9,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::design::{Design, RunRecord};
+use crate::study::Study;
 use serde::{Deserialize, Serialize};
 
 /// Bump only on breaking schema changes; unknown *fields* are tolerated
 /// without a bump (forward compatibility for additive changes).
-pub const SCHEMA_VERSION: u32 = 1;
+///
+/// v2 (v0.3 Step 4): adds `studies`. A v1 file is a valid v2 file with
+/// zero studies — `#[serde(default)]` makes the migration a no-op, so
+/// older projects load with nothing lost.
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
@@ -21,6 +26,8 @@ pub struct Project {
     pub name: String,
     pub designs: Vec<Design>,
     pub runs: Vec<RunRecord>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub studies: Vec<Study>,
 }
 
 impl Project {
@@ -30,6 +37,7 @@ impl Project {
             name: name.into(),
             designs: vec![Design::reference()],
             runs: Vec::new(),
+            studies: Vec::new(),
         }
     }
 }
@@ -167,7 +175,7 @@ mod tests {
     #[test]
     fn newer_schema_version_is_rejected_with_clear_message() {
         let text = to_toml(&Project::new("tomorrow")).unwrap();
-        let bumped = text.replace("schema_version = 1", "schema_version = 999");
+        let bumped = text.replace("schema_version = 2", "schema_version = 999");
         let err = from_toml(&bumped).unwrap_err();
         assert!(err.contains("999"), "error should name the version: {err}");
         assert!(err.contains("newer"), "error should say why: {err}");
@@ -259,6 +267,60 @@ mod tests {
             "autosave of 100-run project took {elapsed:?}"
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn v2_project_with_studies_roundtrips_byte_identically() {
+        use crate::study::{Study, StudyId, StudyKind, StudyResults};
+        let mut p = Project::new("study bird");
+        p.studies.push(Study {
+            id: StudyId(1),
+            name: "landing spread".into(),
+            kind: StudyKind::Dispersion { flights: 1000 },
+            engine: "native".into(),
+            seed: 42,
+            results: Some(StudyResults {
+                input_hash: "abc123".into(),
+                data: serde_json::json!({ "p50_apogee_m": 301.2 }),
+            }),
+        });
+        p.studies.push(Study {
+            id: StudyId(2),
+            name: "unrun".into(),
+            kind: StudyKind::SingleFlight,
+            engine: "native".into(),
+            seed: 0,
+            results: None,
+        });
+        let first = to_toml(&p).unwrap();
+        let reloaded = from_toml(&first).unwrap();
+        let second = to_toml(&reloaded).unwrap();
+        assert_eq!(first, second, "v2 TOML roundtrip must be byte-identical");
+        assert_eq!(reloaded.studies.len(), 2);
+        assert_eq!(
+            reloaded.studies[0].results.as_ref().unwrap().input_hash,
+            "abc123"
+        );
+    }
+
+    #[test]
+    fn v1_project_loads_with_zero_studies_and_no_data_loss() {
+        // A genuine v1 file: no studies field, schema_version = 1.
+        let mut p = sample_project();
+        p.studies.clear();
+        let v1_text = to_toml(&p)
+            .unwrap()
+            .replace("schema_version = 2", "schema_version = 1");
+        assert!(!v1_text.contains("studies"), "fixture must be study-free");
+
+        let loaded = from_toml(&v1_text).expect("v1 projects must keep loading");
+        assert_eq!(loaded.studies.len(), 0, "v1 migrates to zero studies");
+        assert_eq!(loaded.name, p.name);
+        assert_eq!(loaded.designs.len(), p.designs.len());
+        assert_eq!(
+            loaded.runs[0].summary.input_hash, p.runs[0].summary.input_hash,
+            "run provenance survives the v1→v2 migration"
+        );
     }
 
     #[test]

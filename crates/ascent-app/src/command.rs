@@ -9,6 +9,7 @@
 //! reproduces the identical document instead of allocating a fresh id.
 
 use crate::design::Design;
+use crate::study::{Study, StudyId, StudyKind, StudyResults};
 use ascent_domain::vehicle::{Part, PartId, PartKind, Vehicle};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -53,6 +54,36 @@ pub enum Command {
     SetDesign {
         design: Design,
     },
+    CreateStudy {
+        name: String,
+        kind: StudyKind,
+        engine: String,
+        seed: u64,
+    },
+    DeleteStudy {
+        id: StudyId,
+    },
+    /// Concrete re-insertion (inverse of DeleteStudy, concrete form of
+    /// CreateStudy — same fidelity rule as RestorePart).
+    RestoreStudy {
+        index: usize,
+        study: Study,
+    },
+    /// Set one named parameter on one study ("name", "engine", "seed",
+    /// or "kind" as a whole tagged object). `id` and `results` are not
+    /// parameters — ids are immutable and results land via SetStudyResults.
+    SetStudyParam {
+        id: StudyId,
+        param: String,
+        value: Value,
+    },
+    /// Land (or clear) a study's results. The job runner dispatches this
+    /// on completion, so results arrive through the journal like every
+    /// other mutation.
+    SetStudyResults {
+        id: StudyId,
+        results: Option<StudyResults>,
+    },
 }
 
 /// Result of applying a command: the concrete forward form (what redo
@@ -65,7 +96,9 @@ pub struct Applied {
 pub fn apply(
     vehicle: &mut Vehicle,
     design: &mut Design,
+    studies: &mut Vec<Study>,
     next_part_id: &mut u32,
+    next_study_id: &mut u32,
     cmd: Command,
 ) -> Result<Applied, String> {
     match cmd {
@@ -155,7 +188,102 @@ pub fn apply(
                 inverse: Command::SetDesign { design: old },
             })
         }
+        Command::CreateStudy {
+            name,
+            kind,
+            engine,
+            seed,
+        } => {
+            let id = StudyId(*next_study_id);
+            let study = Study {
+                id,
+                name,
+                kind,
+                engine,
+                seed,
+                results: None,
+            };
+            let index = studies.len();
+            studies.push(study.clone());
+            *next_study_id += 1;
+            Ok(Applied {
+                forward: Command::RestoreStudy { index, study },
+                inverse: Command::DeleteStudy { id },
+            })
+        }
+        Command::RestoreStudy { index, study } => {
+            if studies.iter().any(|s| s.id == study.id) {
+                return Err(format!("study {} already exists", study.id.0));
+            }
+            let at = index.min(studies.len());
+            studies.insert(at, study.clone());
+            let id = study.id;
+            Ok(Applied {
+                forward: Command::RestoreStudy { index: at, study },
+                inverse: Command::DeleteStudy { id },
+            })
+        }
+        Command::DeleteStudy { id } => {
+            let index = studies
+                .iter()
+                .position(|s| s.id == id)
+                .ok_or_else(|| format!("no study {}", id.0))?;
+            let study = studies.remove(index);
+            Ok(Applied {
+                forward: Command::DeleteStudy { id },
+                inverse: Command::RestoreStudy { index, study },
+            })
+        }
+        Command::SetStudyParam { id, param, value } => {
+            let study = find_study_mut(studies, id).ok_or_else(|| format!("no study {}", id.0))?;
+            let old = patch_study(study, &param, value.clone())?;
+            Ok(Applied {
+                forward: Command::SetStudyParam {
+                    id,
+                    param: param.clone(),
+                    value,
+                },
+                inverse: Command::SetStudyParam {
+                    id,
+                    param,
+                    value: old,
+                },
+            })
+        }
+        Command::SetStudyResults { id, results } => {
+            let study = find_study_mut(studies, id).ok_or_else(|| format!("no study {}", id.0))?;
+            let old = std::mem::replace(&mut study.results, results.clone());
+            Ok(Applied {
+                forward: Command::SetStudyResults { id, results },
+                inverse: Command::SetStudyResults { id, results: old },
+            })
+        }
     }
+}
+
+fn find_study_mut(studies: &mut [Study], id: StudyId) -> Option<&mut Study> {
+    studies.iter_mut().find(|s| s.id == id)
+}
+
+/// Patch-through-serde for a Study, same discipline as parts and the
+/// design: the field must exist, the patched object must deserialize
+/// back, and identity/results fields are off limits.
+fn patch_study(study: &mut Study, param: &str, value: Value) -> Result<Value, String> {
+    if param == "id" {
+        return Err("a study's id is fixed".into());
+    }
+    if param == "results" {
+        return Err("results land via set_study_results, not as a parameter".into());
+    }
+    let mut json = serde_json::to_value(&*study).map_err(|e| e.to_string())?;
+    let map = json.as_object_mut().expect("study is an object");
+    let old = map
+        .get(param)
+        .cloned()
+        .ok_or_else(|| format!("study has no parameter '{param}'"))?;
+    map.insert(param.to_string(), value);
+    *study = serde_json::from_value(json).map_err(|e| format!("invalid value for '{param}': {e}"))?;
+    Ok(old)
 }
 
 fn insert_part(

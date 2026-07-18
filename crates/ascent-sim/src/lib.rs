@@ -26,4 +26,4 @@ pub use rocketpy_bridge::RocketPyEngine;
 pub use sim::{
     convergence_report, simulate_vertical, ConvergenceReport, SimConfig, SimResult,
 };
-pub use summary::{input_hash, SimSummary};
+pub use summary::{content_hash, input_hash, SimSummary};
