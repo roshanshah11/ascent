@@ -1,0 +1,42 @@
+# Journal Format (v0.3 Step 2)
+
+The journal is the session's memory and the product's automation contract: every mutation of user-owned state is a named `Command` dispatched through the one dispatcher in `crates/ascent-app/src/document.rs`. The GUI, the scripting console, the headless CLI, and the copilot seam are all clients of this stream — there is no second mutation path.
+
+## File shape
+
+JSONL. Line 1 is the header; every following line is one operation, in dispatch order.
+
+```
+{"journal_version":1}
+{"op":"dispatch","command":{"cmd":"set_sim_param","param":"cd","value":0.7}}
+{"op":"dispatch","command":{"cmd":"add_part","parent":2,"kind":{"type":"fin_set","count":4,"root_chord_m":0.04,"tip_chord_m":0.02,"span_m":0.03,"sweep_m":0.0,"thickness_mm":2.0,"mass_g":5.0}}}
+{"op":"undo"}
+{"op":"redo"}
+```
+
+- **Undo and redo are journaled** — a record that skipped them could not reproduce the final state.
+- **Replay** (`Document::replay`) starts from the default document and re-dispatches every line. Replay must reproduce the live document **byte-identically** (`canonical_bytes()` equality) — the determinism discipline extends to the command layer.
+- Errors carry 1-based line numbers. An unknown `journal_version` fails immediately.
+
+## Command grammar (`cmd` tag)
+
+| Command | Fields | Notes |
+|---|---|---|
+| `add_part` | `parent` (PartId or null), `kind` (tagged PartKind per `VEHICLE_TREE.md`) | Id allocated at apply time from a monotonic counter; counter state is part of the document, so replay allocates identically. |
+| `remove_part` | `id` | Inverse restores the exact part at its exact index. |
+| `restore_part` | `parent`, `index`, `part` | Concrete re-insertion; appears in journals only via replay of undo/redo internals — normal clients never send it. |
+| `set_part_param` | `id`, `param`, `value` | `param` is the serde field name; the patched part must deserialize into a valid `PartKind`, so typo'd params and wrong types are rejected atomically. `type` is immutable. |
+| `set_sim_param` | `param`, `value` | Flat design fields; dotted `chute.*` paths for the chute. `motor_designation` is refused — use `select_motor`. |
+| `select_motor` | `designation` | |
+| `set_design` | `design` | Coarse replacement: reset and crash-recovery restore. |
+
+## Semantics
+
+- **Atomic**: a command either fully applies (and the tree still passes `validate()`) or the document is untouched and an error string returns.
+- **Invertible**: `apply` returns a concrete forward form plus its inverse. `add_part`'s concrete forward is a `restore_part`, so redo reproduces the identical id instead of allocating a fresh one.
+- **Monotonic ids**: `PartId`s are never reused within a document, so parts referenced from undo/redo stacks can never collide.
+- **Versioned**: bump `journal_version` on any breaking grammar change; readers refuse unknown versions with a clear message.
+
+## Text form (Step 8, reserved)
+
+The scripting console and CLI add a canonical text form per command (e.g. `set-part-param 3 root_chord_m 0.05`) that parses to the same `Command` enum. This document is the contract for both forms.

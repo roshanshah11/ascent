@@ -1,7 +1,9 @@
 // The only file that touches the Tauri bridge. Coarse calls only.
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  Command,
   Design,
+  DocumentState,
   DispersionRequest,
   DispersionSummary,
   EvidenceReport,
@@ -15,6 +17,22 @@ import type {
 
 export function fetchReferenceDesign(): Promise<Design> {
   return invoke<Design>("reference_design");
+}
+
+export function getDocument(): Promise<DocumentState> {
+  return invoke<DocumentState>("get_document");
+}
+
+export function dispatchCommand(command: Command): Promise<DocumentState> {
+  return invoke<DocumentState>("dispatch_command", { command });
+}
+
+export function undoDocument(): Promise<DocumentState> {
+  return invoke<DocumentState>("undo_document");
+}
+
+export function redoDocument(): Promise<DocumentState> {
+  return invoke<DocumentState>("redo_document");
 }
 
 export function fetchMotors(): Promise<MotorInfo[]> {

@@ -32,7 +32,7 @@ fn lock_registry() -> std::sync::MutexGuard<'static, MotorRegistry> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChuteSpec {
     pub enabled: bool,
     pub diameter_cm: f64,
@@ -40,7 +40,7 @@ pub struct ChuteSpec {
 }
 
 /// Everything the inspector can edit, in UI-friendly units.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Design {
     pub name: String,
     pub dry_mass_g: f64,

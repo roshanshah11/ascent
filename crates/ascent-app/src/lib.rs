@@ -3,14 +3,18 @@
 //! All physics stays in ascent-domain / ascent-sim; this crate only maps
 //! DTOs and downsamples the trajectory for playback.
 
+mod command;
 mod credibility;
 mod design;
 mod dispersion_ipc;
+mod document;
 mod evidence;
 mod project;
 mod review_ipc;
 
+pub use command::Command;
 pub use credibility::{Factor, QuantityFlag, Regime, Scorecard};
+pub use document::{Document, DocumentState};
 pub use design::{run_design, Design, ImportedMotor, MotorInfo, RunRecord, SpreadResult};
 pub use dispersion_ipc::DispersionRequest;
 pub use project::{from_toml, to_toml, Project};
@@ -20,6 +24,43 @@ pub use review_ipc::{repair as review_repair, report as review_report, ReviewRep
 #[tauri::command]
 fn reference_design() -> Design {
     Design::reference()
+}
+
+type DocState<'a> = tauri::State<'a, std::sync::Mutex<Document>>;
+
+fn doc_lock<'a>(state: &'a DocState<'_>) -> std::sync::MutexGuard<'a, Document> {
+    state.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+#[tauri::command]
+fn get_document(state: DocState) -> DocumentState {
+    doc_lock(&state).state()
+}
+
+#[tauri::command]
+fn dispatch_command(state: DocState, command: Command) -> Result<DocumentState, String> {
+    let mut doc = doc_lock(&state);
+    doc.dispatch(command)?;
+    Ok(doc.state())
+}
+
+#[tauri::command]
+fn undo_document(state: DocState) -> DocumentState {
+    let mut doc = doc_lock(&state);
+    doc.undo();
+    doc.state()
+}
+
+#[tauri::command]
+fn redo_document(state: DocState) -> DocumentState {
+    let mut doc = doc_lock(&state);
+    doc.redo();
+    doc.state()
+}
+
+#[tauri::command]
+fn session_journal(state: DocState) -> String {
+    doc_lock(&state).journal_jsonl()
 }
 
 #[tauri::command]
@@ -94,8 +135,14 @@ fn solve_review(target_apogee_m: f64) -> Result<ascent_review::Repair, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(std::sync::Mutex::new(Document::default()))
         .invoke_handler(tauri::generate_handler![
             reference_design,
+            get_document,
+            dispatch_command,
+            undo_document,
+            redo_document,
+            session_journal,
             list_motors,
             run_simulation,
             run_spread,

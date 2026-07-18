@@ -8,26 +8,28 @@ import ReviewPanel from "./components/ReviewPanel";
 import SpreadPanel from "./components/SpreadPanel";
 import Viewport from "./components/Viewport";
 import Viewport3D from "./components/Viewport3D";
-import {
-  canRedo,
-  canUndo,
-  emptyHistory,
-  pushCommand,
-  redo,
-  replaceDesign,
-  undo,
-  type CommandHistory,
-} from "./core/commands";
+import { diffDesign } from "./core/commandDiff";
 import { initialRunStatus, reduceRunStatus } from "./core/runState";
-import type { Design, MotorInfo, Project, RunRecord, SpreadResult } from "./core/types";
+import type {
+  Design,
+  DocumentState,
+  MotorInfo,
+  Project,
+  RunRecord,
+  SpreadResult,
+} from "./core/types";
 import {
   autosaveProject,
   checkRecovery,
   discardRecovery,
+  dispatchCommand,
   fetchMotors,
   fetchReferenceDesign,
+  getDocument,
+  redoDocument,
   runSimulation,
   runSpread,
+  undoDocument,
 } from "./ipc";
 
 const STATE_BADGE: Record<string, { label: string; color: string }> = {
@@ -38,7 +40,9 @@ const STATE_BADGE: Record<string, { label: string; color: string }> = {
 };
 
 export default function App() {
-  const [design, setDesign] = useState<Design | null>(null);
+  // The Rust document store owns all user state (v0.3); we render its
+  // snapshots and send commands. No design mutation happens client-side.
+  const [doc, setDoc] = useState<DocumentState | null>(null);
   const [view3d, setView3d] = useState(false);
   const [motors, setMotors] = useState<MotorInfo[]>([]);
   const [record, setRecord] = useState<RunRecord | null>(null);
@@ -46,13 +50,9 @@ export default function App() {
   const [status, dispatch] = useReducer(reduceRunStatus, initialRunStatus);
   const [mode, setMode] = useState<"design" | "flight" | "review">("design");
   const [error, setError] = useState<string | null>(null);
-  // Undo/redo history lives in a ref: commands close over design snapshots,
-  // so the ref never needs to trigger renders itself — setDesign does that.
-  const historyRef = useRef<CommandHistory>(emptyHistory);
   // Every design mutation and comparison request advances this generation.
   // A completion may render only while it still describes the current design.
   const comparisonGeneration = useRef(0);
-  const [, bumpHistory] = useReducer((n: number) => n + 1, 0);
   const [recovery, setRecovery] = useState<Project | null>(null);
   // Latest state for the autosave interval, without re-arming the timer on
   // every render.
@@ -61,10 +61,14 @@ export default function App() {
     record: null,
     dirty: false,
   });
-  autosaveRef.current = { design, record, dirty: status.state === "dirty" };
+  autosaveRef.current = {
+    design: doc?.design ?? null,
+    record,
+    dirty: status.state === "dirty",
+  };
 
   useEffect(() => {
-    fetchReferenceDesign().then(setDesign).catch((e) => setError(String(e)));
+    getDocument().then(setDoc).catch((e) => setError(String(e)));
     fetchMotors().then(setMotors).catch((e) => setError(String(e)));
     // A surviving autosave means the last session crashed — offer a restore.
     checkRecovery().then(setRecovery).catch(() => {});
@@ -87,43 +91,45 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  if (!design) {
-    return <div style={{ padding: 24 }}>{error ?? "Loading reference design…"}</div>;
+  if (!doc) {
+    return <div style={{ padding: 24 }}>{error ?? "Loading document…"}</div>;
   }
+  const design = doc.design;
 
   const invalidateSpread = () => {
     comparisonGeneration.current += 1;
     setSpread(null);
   };
 
-  const edit = (next: Design) => {
-    const r = pushCommand(historyRef.current, replaceDesign(design, next), design);
-    historyRef.current = r.history;
-    setDesign(r.design);
+  const markEdited = (next: DocumentState) => {
+    setDoc(next);
     invalidateSpread();
-    bumpHistory();
     dispatch({ type: "EDIT" });
+  };
+
+  const edit = async (next: Design) => {
+    const cmds = diffDesign(design, next);
+    if (cmds.length === 0) return;
+    try {
+      let state = doc;
+      for (const cmd of cmds) {
+        state = await dispatchCommand(cmd);
+      }
+      markEdited(state);
+    } catch (e) {
+      setError(String(e));
+    }
   };
 
   // An undone design is a dirty design — the run-state machine stays authoritative.
-  const doUndo = () => {
-    if (!canUndo(historyRef.current)) return;
-    const r = undo(historyRef.current, design);
-    historyRef.current = r.history;
-    setDesign(r.design);
-    invalidateSpread();
-    bumpHistory();
-    dispatch({ type: "EDIT" });
+  const doUndo = async () => {
+    if (!doc.can_undo) return;
+    markEdited(await undoDocument());
   };
 
-  const doRedo = () => {
-    if (!canRedo(historyRef.current)) return;
-    const r = redo(historyRef.current, design);
-    historyRef.current = r.history;
-    setDesign(r.design);
-    invalidateSpread();
-    bumpHistory();
-    dispatch({ type: "EDIT" });
+  const doRedo = async () => {
+    if (!doc.can_redo) return;
+    markEdited(await redoDocument());
   };
 
   const run = async () => {
@@ -152,31 +158,33 @@ export default function App() {
     }
   };
 
-  // Demo reset: pristine reference design, no record, back to design mode.
+  // Demo reset: journaled coarse design replacement, back to design mode.
   const reset = async () => {
     setError(null);
     setRecord(null);
     invalidateSpread();
     setMode("design");
-    historyRef.current = emptyHistory;
-    bumpHistory();
     dispatch({ type: "RESET" });
     try {
-      setDesign(await fetchReferenceDesign());
+      const reference = await fetchReferenceDesign();
+      setDoc(await dispatchCommand({ cmd: "set_design", design: reference }));
     } catch (e) {
       setError(String(e));
     }
   };
 
-  const restoreRecovery = () => {
+  const restoreRecovery = async () => {
     if (!recovery) return;
-    if (recovery.designs.length > 0) {
-      setDesign(recovery.designs[0]);
+    try {
+      if (recovery.designs.length > 0) {
+        markEdited(
+          await dispatchCommand({ cmd: "set_design", design: recovery.designs[0] }),
+        ); // Restored work is unsaved work.
+      }
+      setRecord(recovery.runs.length > 0 ? recovery.runs[recovery.runs.length - 1] : null);
+    } catch (e) {
+      setError(String(e));
     }
-    setRecord(recovery.runs.length > 0 ? recovery.runs[recovery.runs.length - 1] : null);
-    historyRef.current = emptyHistory;
-    bumpHistory();
-    dispatch({ type: "EDIT" }); // Restored work is unsaved work.
     setRecovery(null);
     discardRecovery().catch(() => {});
   };
@@ -191,8 +199,8 @@ export default function App() {
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
     e.preventDefault();
-    if (e.shiftKey) doRedo();
-    else doUndo();
+    if (e.shiftKey) void doRedo();
+    else void doUndo();
   };
 
   return (
@@ -217,10 +225,10 @@ export default function App() {
         <button onClick={reset} title="Restore the reference design and clear results">
           Reset demo
         </button>
-        <button onClick={doUndo} disabled={!canUndo(historyRef.current)} title="Undo (⌘Z)">
+        <button onClick={doUndo} disabled={!doc.can_undo} title="Undo (⌘Z)">
           Undo
         </button>
-        <button onClick={doRedo} disabled={!canRedo(historyRef.current)} title="Redo (⇧⌘Z)">
+        <button onClick={doRedo} disabled={!doc.can_redo} title="Redo (⇧⌘Z)">
           Redo
         </button>
         <nav style={{ marginLeft: "auto" }}>

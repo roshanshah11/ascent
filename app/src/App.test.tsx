@@ -13,6 +13,10 @@ const ipc = vi.hoisted(() => ({
   autosaveProject: vi.fn(() => Promise.resolve()),
   checkRecovery: vi.fn(() => Promise.resolve(null)),
   discardRecovery: vi.fn(() => Promise.resolve()),
+  getDocument: vi.fn(),
+  dispatchCommand: vi.fn(),
+  undoDocument: vi.fn(),
+  redoDocument: vi.fn(),
 }));
 
 vi.mock("./ipc", () => ipc);
@@ -109,6 +113,49 @@ describe("engine comparison UI", () => {
     ipc.fetchMotors.mockResolvedValue([]);
     ipc.runSimulation.mockReset();
     ipc.runSpread.mockReset();
+
+    // Stateful fake of the Rust document store: enough command semantics
+    // for the UI flows under test (scalar edits, motor, coarse replace).
+    let designNow: Design = reference;
+    let past: Design[] = [];
+    let future: Design[] = [];
+    const state = () => ({
+      vehicle: { name: designNow.name, parts: [] },
+      design: designNow,
+      can_undo: past.length > 0,
+      can_redo: future.length > 0,
+    });
+    ipc.getDocument.mockImplementation(async () => state());
+    ipc.dispatchCommand.mockImplementation(
+      async (cmd: { cmd: string } & Record<string, unknown>) => {
+        past.push(designNow);
+        future = [];
+        if (cmd.cmd === "set_sim_param") {
+          designNow = { ...designNow, [cmd.param as string]: cmd.value } as Design;
+        } else if (cmd.cmd === "select_motor") {
+          designNow = { ...designNow, motor_designation: cmd.designation as string };
+        } else if (cmd.cmd === "set_design") {
+          designNow = cmd.design as Design;
+        }
+        return state();
+      },
+    );
+    ipc.undoDocument.mockImplementation(async () => {
+      const prev = past.pop();
+      if (prev) {
+        future.push(designNow);
+        designNow = prev;
+      }
+      return state();
+    });
+    ipc.redoDocument.mockImplementation(async () => {
+      const next = future.pop();
+      if (next) {
+        past.push(designNow);
+        designNow = next;
+      }
+      return state();
+    });
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);

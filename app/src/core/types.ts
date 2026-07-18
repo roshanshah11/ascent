@@ -17,6 +17,35 @@ export interface Design {
   rail_length_m: number;
 }
 
+// --- Document layer (v0.3): Rust owns the state, we render snapshots. ---
+
+export interface VehiclePart {
+  id: number;
+  kind: { type: string } & Record<string, unknown>;
+  children: VehiclePart[];
+}
+
+export interface Vehicle {
+  name: string;
+  parts: VehiclePart[];
+}
+
+export interface DocumentState {
+  vehicle: Vehicle;
+  design: Design;
+  can_undo: boolean;
+  can_redo: boolean;
+}
+
+/** Mirrors the serde tag layout of crates/ascent-app/src/command.rs. */
+export type Command =
+  | { cmd: "add_part"; parent: number | null; kind: { type: string } & Record<string, unknown> }
+  | { cmd: "remove_part"; id: number }
+  | { cmd: "set_part_param"; id: number; param: string; value: unknown }
+  | { cmd: "set_sim_param"; param: string; value: unknown }
+  | { cmd: "select_motor"; designation: string }
+  | { cmd: "set_design"; design: Design };
+
 export interface MotorInfo {
   designation: string;
   manufacturer: string;
