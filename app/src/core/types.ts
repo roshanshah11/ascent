@@ -265,4 +265,5 @@ export interface Project {
   name: string;
   designs: Design[];
   runs: RunRecord[];
+  studies?: Study[];
 }

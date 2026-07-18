@@ -5,6 +5,7 @@ import FlightMode from "./components/FlightMode";
 import Inspector from "./components/Inspector";
 import JobsPanel from "./components/JobsPanel";
 import MotorSelector from "./components/MotorSelector";
+import ResultsWorkspace from "./components/ResultsWorkspace";
 import ReviewPanel from "./components/ReviewPanel";
 import SpreadPanel from "./components/SpreadPanel";
 import Viewport from "./components/Viewport";
@@ -49,7 +50,7 @@ export default function App() {
   const [record, setRecord] = useState<RunRecord | null>(null);
   const [spread, setSpread] = useState<SpreadResult | null>(null);
   const [status, dispatch] = useReducer(reduceRunStatus, initialRunStatus);
-  const [mode, setMode] = useState<"design" | "flight" | "review">("design");
+  const [mode, setMode] = useState<"design" | "flight" | "results" | "review">("design");
   const [error, setError] = useState<string | null>(null);
   // Every design mutation and comparison request advances this generation.
   // A completion may render only while it still describes the current design.
@@ -242,6 +243,9 @@ export default function App() {
           >
             Flight
           </button>
+          <button onClick={() => setMode("results")} disabled={mode === "results"}>
+            Results
+          </button>
           <button onClick={() => setMode("review")} disabled={mode === "review"}>
             Flight Review
           </button>
@@ -293,6 +297,8 @@ export default function App() {
         </>
       ) : mode === "flight" ? (
         record && <FlightMode record={record} />
+      ) : mode === "results" ? (
+        <ResultsWorkspace studies={doc.studies} record={record} />
       ) : (
         <ReviewPanel />
       )}
