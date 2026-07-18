@@ -28,6 +28,10 @@ pub struct Project {
     pub runs: Vec<RunRecord>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub studies: Vec<Study>,
+    /// The vehicle model tree (additive, v0.3 Step 8). Absent in older
+    /// files; readers fall back to the reference vehicle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vehicle: Option<ascent_domain::vehicle::Vehicle>,
 }
 
 impl Project {
@@ -38,6 +42,7 @@ impl Project {
             designs: vec![Design::reference()],
             runs: Vec::new(),
             studies: Vec::new(),
+            vehicle: None,
         }
     }
 }

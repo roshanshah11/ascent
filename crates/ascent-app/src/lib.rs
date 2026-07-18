@@ -3,6 +3,7 @@
 //! All physics stays in ascent-domain / ascent-sim; this crate only maps
 //! DTOs and downsamples the trajectory for playback.
 
+pub mod cli;
 mod command;
 mod credibility;
 mod design;
@@ -68,6 +69,16 @@ fn redo_document(state: DocState) -> DocumentState {
 #[tauri::command]
 fn session_journal(state: DocState) -> String {
     doc_lock(&state).journal_jsonl()
+}
+
+/// Console line → parse the text grammar → the same dispatcher every
+/// other client uses. No second mutation path.
+#[tauri::command]
+fn console_exec(state: DocState, line: String) -> Result<DocumentState, String> {
+    let command = Command::parse_text(&line)?;
+    let mut doc = doc_lock(&state);
+    doc.dispatch(command)?;
+    Ok(doc.state())
 }
 
 #[tauri::command]
@@ -187,6 +198,7 @@ pub fn run() {
             undo_document,
             redo_document,
             session_journal,
+            console_exec,
             list_motors,
             run_simulation,
             run_spread,

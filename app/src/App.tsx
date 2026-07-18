@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from "react";
+import Console from "./components/Console";
 import DispersionView from "./components/DispersionView";
 import EvidenceDrawer from "./components/EvidenceDrawer";
 import FlightMode from "./components/FlightMode";
@@ -294,6 +295,7 @@ export default function App() {
           </div>
           <JobsPanel studies={doc.studies} onDocChange={setDoc} />
           <DispersionView design={design} />
+          <Console onDocChange={markEdited} />
         </>
       ) : mode === "flight" ? (
         record && <FlightMode record={record} />

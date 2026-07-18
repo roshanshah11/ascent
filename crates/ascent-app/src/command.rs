@@ -261,6 +261,242 @@ pub fn apply(
     }
 }
 
+// ---- Text form (v0.3 Step 8) -------------------------------------------
+//
+// The canonical text grammar per docs/JOURNAL_FORMAT.md: a kebab-case
+// verb, simple positional tokens, and JSON for structured payloads. The
+// console and the CLI both parse to this same `Command` enum and go
+// through the same dispatcher — no second mutation path, no second
+// validation story. `parse_text(to_text(cmd)) == cmd` for every variant.
+
+impl Command {
+    /// Canonical text form of this command.
+    pub fn to_text(&self) -> String {
+        let json = |v: &dyn ErasedSer| v.to_json();
+        // (helper trait below keeps the match arms readable)
+        match self {
+            Command::AddPart { parent, kind } => {
+                format!("add-part {} {}", opt_id(parent), json(kind))
+            }
+            Command::RemovePart { id } => format!("remove-part {}", id.0),
+            Command::RestorePart {
+                parent,
+                index,
+                part,
+            } => format!("restore-part {} {} {}", opt_id(parent), index, json(part)),
+            Command::SetPartParam { id, param, value } => {
+                format!("set-part-param {} {} {}", id.0, param, json(value))
+            }
+            Command::SetSimParam { param, value } => {
+                format!("set-sim-param {} {}", param, json(value))
+            }
+            Command::SelectMotor { designation } => format!("select-motor {designation}"),
+            Command::SetDesign { design } => format!("set-design {}", json(design)),
+            Command::CreateStudy {
+                name,
+                kind,
+                engine,
+                seed,
+            } => format!(
+                "create-study {} {} {} {}",
+                serde_json::Value::from(name.clone()),
+                engine,
+                seed,
+                json(kind)
+            ),
+            Command::DeleteStudy { id } => format!("delete-study {}", id.0),
+            Command::RestoreStudy { index, study } => {
+                format!("restore-study {} {}", index, json(study))
+            }
+            Command::SetStudyParam { id, param, value } => {
+                format!("set-study-param {} {} {}", id.0, param, json(value))
+            }
+            Command::SetStudyResults { id, results } => format!(
+                "set-study-results {} {}",
+                id.0,
+                match results {
+                    Some(r) => r.to_json(),
+                    None => "null".into(),
+                }
+            ),
+        }
+    }
+
+    /// Parse the canonical text form. Errors name what was expected.
+    pub fn parse_text(line: &str) -> Result<Command, String> {
+        let line = line.trim();
+        let (verb, rest) = split_token(line);
+        if verb.is_empty() {
+            return Err("empty command".into());
+        }
+        match verb {
+            "add-part" => {
+                let (parent, kind_json) = split_token(rest);
+                Ok(Command::AddPart {
+                    parent: parse_opt_id(parent)?,
+                    kind: parse_json("part kind", kind_json)?,
+                })
+            }
+            "remove-part" => Ok(Command::RemovePart {
+                id: PartId(parse_u32("part id", rest)?),
+            }),
+            "restore-part" => {
+                let (parent, rest) = split_token(rest);
+                let (index, part_json) = split_token(rest);
+                Ok(Command::RestorePart {
+                    parent: parse_opt_id(parent)?,
+                    index: parse_usize("index", index)?,
+                    part: parse_json("part", part_json)?,
+                })
+            }
+            "set-part-param" => {
+                let (id, rest) = split_token(rest);
+                let (param, value_json) = split_token(rest);
+                Ok(Command::SetPartParam {
+                    id: PartId(parse_u32("part id", id)?),
+                    param: require("parameter name", param)?,
+                    value: parse_json("value", value_json)?,
+                })
+            }
+            "set-sim-param" => {
+                let (param, value_json) = split_token(rest);
+                Ok(Command::SetSimParam {
+                    param: require("parameter name", param)?,
+                    value: parse_json("value", value_json)?,
+                })
+            }
+            "select-motor" => Ok(Command::SelectMotor {
+                designation: require("motor designation", rest)?,
+            }),
+            "set-design" => Ok(Command::SetDesign {
+                design: parse_json("design", rest)?,
+            }),
+            "create-study" => {
+                // Name is a JSON string (may contain spaces), then engine
+                // token, seed, and the kind object.
+                let (name_json, rest) = split_json_prefix(rest)?;
+                let name: String =
+                    serde_json::from_str(&name_json).map_err(|e| format!("bad study name: {e}"))?;
+                let (engine, rest) = split_token(rest);
+                let (seed, kind_json) = split_token(rest);
+                Ok(Command::CreateStudy {
+                    name,
+                    engine: require("engine", engine)?,
+                    seed: parse_u64("seed", seed)?,
+                    kind: parse_json("study kind", kind_json)?,
+                })
+            }
+            "delete-study" => Ok(Command::DeleteStudy {
+                id: StudyId(parse_u32("study id", rest)?),
+            }),
+            "restore-study" => {
+                let (index, study_json) = split_token(rest);
+                Ok(Command::RestoreStudy {
+                    index: parse_usize("index", index)?,
+                    study: parse_json("study", study_json)?,
+                })
+            }
+            "set-study-param" => {
+                let (id, rest) = split_token(rest);
+                let (param, value_json) = split_token(rest);
+                Ok(Command::SetStudyParam {
+                    id: StudyId(parse_u32("study id", id)?),
+                    param: require("parameter name", param)?,
+                    value: parse_json("value", value_json)?,
+                })
+            }
+            "set-study-results" => {
+                let (id, results_json) = split_token(rest);
+                Ok(Command::SetStudyResults {
+                    id: StudyId(parse_u32("study id", id)?),
+                    results: parse_json("results", results_json)?,
+                })
+            }
+            other => Err(format!("unknown command '{other}'")),
+        }
+    }
+}
+
+/// Tiny object-safe serialization helper so `to_text` reads flat.
+trait ErasedSer {
+    fn to_json(&self) -> String;
+}
+
+impl<T: Serialize> ErasedSer for T {
+    fn to_json(&self) -> String {
+        serde_json::to_string(self).expect("command payload serializes")
+    }
+}
+
+fn opt_id(id: &Option<PartId>) -> String {
+    match id {
+        Some(p) => p.0.to_string(),
+        None => "-".into(),
+    }
+}
+
+fn split_token(s: &str) -> (&str, &str) {
+    let s = s.trim_start();
+    match s.find(char::is_whitespace) {
+        Some(at) => (&s[..at], s[at..].trim_start()),
+        None => (s, ""),
+    }
+}
+
+/// Split a leading JSON value (used for the quoted study name) from the
+/// rest of the line, using serde's own parser to find the boundary.
+fn split_json_prefix(s: &str) -> Result<(String, &str), String> {
+    let s = s.trim_start();
+    let mut stream = serde_json::Deserializer::from_str(s).into_iter::<Value>();
+    let value = stream
+        .next()
+        .ok_or("expected a JSON value")?
+        .map_err(|e| format!("bad JSON: {e}"))?;
+    let consumed = stream.byte_offset();
+    Ok((value.to_string(), &s[consumed..]))
+}
+
+fn require(what: &str, token: &str) -> Result<String, String> {
+    if token.is_empty() {
+        Err(format!("expected {what}"))
+    } else {
+        Ok(token.to_string())
+    }
+}
+
+fn parse_opt_id(token: &str) -> Result<Option<PartId>, String> {
+    if token == "-" {
+        Ok(None)
+    } else {
+        Ok(Some(PartId(parse_u32("parent id (or '-')", token)?)))
+    }
+}
+
+fn parse_u32(what: &str, token: &str) -> Result<u32, String> {
+    token
+        .parse()
+        .map_err(|_| format!("expected {what}, got '{token}'"))
+}
+
+fn parse_u64(what: &str, token: &str) -> Result<u64, String> {
+    token
+        .parse()
+        .map_err(|_| format!("expected {what}, got '{token}'"))
+}
+
+fn parse_usize(what: &str, token: &str) -> Result<usize, String> {
+    token
+        .parse()
+        .map_err(|_| format!("expected {what}, got '{token}'"))
+}
+
+fn parse_json<T: serde::de::DeserializeOwned>(what: &str, s: &str) -> Result<T, String> {
+    if s.trim().is_empty() {
+        return Err(format!("expected {what} as JSON"));
+    }
+    serde_json::from_str(s.trim()).map_err(|e| format!("bad {what}: {e}"))
+}
+
 fn find_study_mut(studies: &mut [Study], id: StudyId) -> Option<&mut Study> {
     studies.iter_mut().find(|s| s.id == id)
 }
@@ -389,4 +625,187 @@ fn patch_design(design: &mut Design, param: &str, value: Value) -> Result<Value,
     map.insert(key, value);
     *design = serde_json::from_value(json).map_err(|e| format!("invalid value for '{param}': {e}"))?;
     Ok(old)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::study::{Study, StudyId, StudyKind, StudyResults};
+    use ascent_domain::vehicle::NoseShape;
+    use serde_json::json;
+
+    fn every_variant() -> Vec<Command> {
+        vec![
+            Command::AddPart {
+                parent: Some(PartId(2)),
+                kind: PartKind::FinSet {
+                    count: 4,
+                    root_chord_m: 0.04,
+                    tip_chord_m: 0.02,
+                    span_m: 0.03,
+                    sweep_m: 0.0,
+                    thickness_mm: 2.0,
+                    mass_g: 5.0,
+                },
+            },
+            Command::AddPart {
+                parent: None,
+                kind: PartKind::NoseCone {
+                    shape: NoseShape::Conical,
+                    length_m: 0.05,
+                    base_radius_m: 0.0125,
+                    mass_g: 4.0,
+                },
+            },
+            Command::RemovePart { id: PartId(3) },
+            Command::RestorePart {
+                parent: Some(PartId(2)),
+                index: 1,
+                part: Part {
+                    id: PartId(7),
+                    kind: PartKind::MassComponent {
+                        name: "payload".into(),
+                        position_m: 0.1,
+                        mass_g: 12.0,
+                    },
+                    children: vec![],
+                },
+            },
+            Command::SetPartParam {
+                id: PartId(3),
+                param: "root_chord_m".into(),
+                value: json!(0.06),
+            },
+            Command::SetSimParam {
+                param: "chute.diameter_cm".into(),
+                value: json!(35.0),
+            },
+            Command::SelectMotor {
+                designation: "B6".into(),
+            },
+            Command::SetDesign {
+                design: Design::reference(),
+            },
+            Command::CreateStudy {
+                name: "landing spread study".into(),
+                kind: StudyKind::Dispersion { flights: 1000 },
+                engine: "native".into(),
+                seed: 42,
+            },
+            Command::DeleteStudy { id: StudyId(1) },
+            Command::RestoreStudy {
+                index: 0,
+                study: Study {
+                    id: StudyId(1),
+                    name: "restored".into(),
+                    kind: StudyKind::SingleFlight,
+                    engine: "native".into(),
+                    seed: 7,
+                    results: Some(StudyResults {
+                        input_hash: "abc".into(),
+                        data: json!({ "p50": 300.0 }),
+                    }),
+                },
+            },
+            Command::SetStudyParam {
+                id: StudyId(1),
+                param: "seed".into(),
+                value: json!(9),
+            },
+            Command::SetStudyResults {
+                id: StudyId(1),
+                results: None,
+            },
+            Command::SetStudyResults {
+                id: StudyId(1),
+                results: Some(StudyResults {
+                    input_hash: "def".into(),
+                    data: json!({ "n": 1 }),
+                }),
+            },
+        ]
+    }
+
+    #[test]
+    fn text_grammar_roundtrips_every_command_variant() {
+        for cmd in every_variant() {
+            let text = cmd.to_text();
+            let parsed = Command::parse_text(&text)
+                .unwrap_or_else(|e| panic!("parse failed for '{text}': {e}"));
+            assert_eq!(parsed, cmd, "roundtrip mismatch for '{text}'");
+        }
+    }
+
+    #[test]
+    fn text_forms_are_the_documented_shapes() {
+        assert_eq!(
+            Command::SetPartParam {
+                id: PartId(3),
+                param: "root_chord_m".into(),
+                value: json!(0.05),
+            }
+            .to_text(),
+            "set-part-param 3 root_chord_m 0.05"
+        );
+        assert_eq!(
+            Command::SelectMotor { designation: "C6".into() }.to_text(),
+            "select-motor C6"
+        );
+        assert_eq!(Command::RemovePart { id: PartId(4) }.to_text(), "remove-part 4");
+    }
+
+    #[test]
+    fn parse_errors_name_what_was_expected() {
+        for (line, needle) in [
+            ("", "empty command"),
+            ("warp-drive 1", "unknown command"),
+            ("remove-part x", "part id"),
+            ("set-part-param 3 root_chord_m", "expected value as JSON"),
+            ("set-part-param 3 root_chord_m not-json", "bad value"),
+            ("add-part 2", "part kind"),
+            ("select-motor", "motor designation"),
+            ("create-study \"a\" native notanumber {\"kind\":\"single_flight\"}", "seed"),
+        ] {
+            let err = Command::parse_text(line).unwrap_err();
+            assert!(err.contains(needle), "'{line}' → '{err}' (wanted '{needle}')");
+        }
+    }
+
+    #[test]
+    fn parsed_text_dispatches_like_the_gui() {
+        use crate::document::Document;
+        let mut via_text = Document::default();
+        let mut via_enum = Document::default();
+        let script = [
+            "set-sim-param cd 0.7",
+            "select-motor B6",
+            "create-study \"spread\" native 42 {\"kind\":\"dispersion\",\"flights\":100}",
+            "set-study-param 1 seed 9",
+        ];
+        for line in script {
+            via_text.dispatch(Command::parse_text(line).unwrap()).unwrap();
+        }
+        via_enum
+            .dispatch(Command::SetSimParam { param: "cd".into(), value: json!(0.7) })
+            .unwrap();
+        via_enum
+            .dispatch(Command::SelectMotor { designation: "B6".into() })
+            .unwrap();
+        via_enum
+            .dispatch(Command::CreateStudy {
+                name: "spread".into(),
+                kind: StudyKind::Dispersion { flights: 100 },
+                engine: "native".into(),
+                seed: 42,
+            })
+            .unwrap();
+        via_enum
+            .dispatch(Command::SetStudyParam {
+                id: StudyId(1),
+                param: "seed".into(),
+                value: json!(9),
+            })
+            .unwrap();
+        assert_eq!(via_text.canonical_bytes(), via_enum.canonical_bytes());
+    }
 }

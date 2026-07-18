@@ -20,6 +20,7 @@ const ipc = vi.hoisted(() => ({
 }));
 
 vi.mock("./ipc", () => ipc);
+vi.mock("./components/Console", () => ({ default: () => null }));
 vi.mock("./components/EvidenceDrawer", () => ({ default: () => null }));
 vi.mock("./components/JobsPanel", () => ({ default: () => null }));
 vi.mock("./components/FlightMode", () => ({ default: () => null }));

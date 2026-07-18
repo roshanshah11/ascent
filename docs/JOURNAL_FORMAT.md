@@ -37,6 +37,29 @@ JSONL. Line 1 is the header; every following line is one operation, in dispatch 
 - **Monotonic ids**: `PartId`s are never reused within a document, so parts referenced from undo/redo stacks can never collide.
 - **Versioned**: bump `journal_version` on any breaking grammar change; readers refuse unknown versions with a clear message.
 
-## Text form (Step 8, reserved)
+## Text form (Step 8)
 
-The scripting console and CLI add a canonical text form per command (e.g. `set-part-param 3 root_chord_m 0.05`) that parses to the same `Command` enum. This document is the contract for both forms.
+The scripting console and the headless CLI share one canonical text form per command, implemented in `crates/ascent-app/src/command.rs` (`Command::to_text` / `Command::parse_text`). Both parse to the same `Command` enum and go through the same dispatcher — there is no second mutation path. `parse_text(to_text(cmd)) == cmd` for every variant (tested).
+
+Shape: a kebab-case verb, simple positional tokens, JSON for structured payloads. `-` stands for a null parent.
+
+| Text form | Command |
+|---|---|
+| `add-part <parent\|-> <kind-json>` | `add_part` |
+| `remove-part <id>` | `remove_part` |
+| `restore-part <parent\|-> <index> <part-json>` | `restore_part` |
+| `set-part-param <id> <param> <value-json>` | `set_part_param` |
+| `set-sim-param <param> <value-json>` | `set_sim_param` |
+| `select-motor <designation>` | `select_motor` |
+| `set-design <design-json>` | `set_design` |
+| `create-study <"name"> <engine> <seed> <kind-json>` | `create_study` |
+| `delete-study <id>` | `delete_study` |
+| `restore-study <index> <study-json>` | `restore_study` |
+| `set-study-param <id> <param> <value-json>` | `set_study_param` |
+| `set-study-results <id> <results-json\|null>` | `set_study_results` |
+
+Example: `set-part-param 3 root_chord_m 0.05` · `create-study "landing spread" native 42 {"kind":"dispersion","flights":1000}`
+
+## Headless CLI (Step 8)
+
+`ascent-cli replay <session.jsonl>` rebuilds a document from a journal and prints its canonical JSON — byte-equality with the live session's `canonical_bytes()` is the determinism proof, and the CI story. `ascent-cli run-study <project.ascent> <study-id-or-name>` runs a study headless and prints hash-stamped results JSON (the same `input_hash` the GUI's job runner stamps).

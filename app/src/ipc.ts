@@ -66,6 +66,14 @@ export function runDispersion(
   return invoke<DispersionSummary>("run_dispersion", { design, request });
 }
 
+export function consoleExec(line: string): Promise<DocumentState> {
+  return invoke<DocumentState>("console_exec", { line });
+}
+
+export function fetchSessionJournal(): Promise<string> {
+  return invoke<string>("session_journal");
+}
+
 export function enqueueStudyJob(studyId: number): Promise<number> {
   return invoke<number>("enqueue_study_job", { studyId });
 }
