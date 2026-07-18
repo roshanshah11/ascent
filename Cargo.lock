@@ -110,6 +110,7 @@ name = "ascent-sim"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "ascent-aero",
  "ascent-domain",
  "serde",
  "serde_json",

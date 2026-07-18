@@ -7,6 +7,7 @@ pub mod rocket;
 #[cfg(feature = "bridge-rocketpy")]
 pub mod rocketpy_bridge;
 pub mod sim;
+pub mod sixdof;
 pub mod summary;
 
 pub use atmosphere::AtmosphereModel;
@@ -25,5 +26,9 @@ pub use rocket::{DragModel, Environment, Recovery, Rocket};
 pub use rocketpy_bridge::RocketPyEngine;
 pub use sim::{
     convergence_report, simulate_vertical, ConvergenceReport, SimConfig, SimResult,
+};
+pub use sixdof::{
+    FlightPhase, SixDofEngine, SixDofLaunch, SixDofResult, SixDofSample, SixDofVehicle,
+    Wind3DLayer, Wind3DProfile,
 };
 pub use summary::{input_hash, SimSummary};
