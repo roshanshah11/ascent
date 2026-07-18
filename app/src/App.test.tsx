@@ -21,6 +21,7 @@ const ipc = vi.hoisted(() => ({
 
 vi.mock("./ipc", () => ipc);
 vi.mock("./components/EvidenceDrawer", () => ({ default: () => null }));
+vi.mock("./components/JobsPanel", () => ({ default: () => null }));
 vi.mock("./components/FlightMode", () => ({ default: () => null }));
 vi.mock("./components/MotorSelector", () => ({ default: () => null }));
 vi.mock("./components/ReviewPanel", () => ({ default: () => null }));
@@ -122,6 +123,7 @@ describe("engine comparison UI", () => {
     const state = () => ({
       vehicle: { name: designNow.name, parts: [] },
       design: designNow,
+      studies: [],
       can_undo: past.length > 0,
       can_redo: future.length > 0,
     });

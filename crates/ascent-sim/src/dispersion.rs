@@ -195,13 +195,36 @@ pub fn run_dispersion(
     config: &SimConfig,
     dispersion: &Dispersion,
 ) -> Result<DispersionSummary, String> {
+    run_dispersion_observed(rocket, motor, env, vehicle, wind, config, dispersion, |_, _| true)
+        .map(|outcome| outcome.expect("uncancellable run cannot be cancelled"))
+}
+
+/// Same run, but observable: `on_progress(completed, total)` is called
+/// before every flight and may return false to cancel cooperatively —
+/// `Ok(None)` means cancelled, nothing partial escapes. The observer
+/// never touches the RNG stream, so an observed run is byte-identical
+/// to a plain one with the same seed.
+#[allow(clippy::too_many_arguments)]
+pub fn run_dispersion_observed(
+    rocket: &Rocket,
+    motor: &Motor,
+    env: &Environment,
+    vehicle: &PlanarVehicle,
+    wind: &WindProfile,
+    config: &SimConfig,
+    dispersion: &Dispersion,
+    mut on_progress: impl FnMut(u32, u32) -> bool,
+) -> Result<Option<DispersionSummary>, String> {
     if dispersion.samples == 0 {
         return Err("dispersion needs at least 1 sample".into());
     }
     let mut rng = SplitMix64::new(dispersion.seed);
     let mut runs = Vec::with_capacity(dispersion.samples as usize);
 
-    for _ in 0..dispersion.samples {
+    for i in 0..dispersion.samples {
+        if !on_progress(i, dispersion.samples) {
+            return Ok(None);
+        }
         let (r, m, v, w) = perturbed_inputs(&mut rng, rocket, motor, vehicle, wind, &dispersion.vary);
         let flight = simulate_planar(&r, &m, env, &v, &w, config);
         runs.push(CompactRun {
@@ -210,6 +233,7 @@ pub fn run_dispersion(
             max_aoa_deg: flight.max_aoa_deg,
         });
     }
+    on_progress(dispersion.samples, dispersion.samples);
 
     let apogees: Vec<f64> = runs.iter().map(|r| r.apogee_m).collect();
     let ranges: Vec<f64> = runs.iter().map(|r| r.landing_range_m).collect();
@@ -217,7 +241,7 @@ pub fn run_dispersion(
     let mean = ranges.iter().sum::<f64>() / n;
     let variance = ranges.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / n;
 
-    Ok(DispersionSummary {
+    Ok(Some(DispersionSummary {
         seed: dispersion.seed,
         samples: dispersion.samples,
         vary: dispersion.vary.clone(),
@@ -231,5 +255,5 @@ pub fn run_dispersion(
             bearing_deg: 0.0,
         },
         runs,
-    })
+    }))
 }

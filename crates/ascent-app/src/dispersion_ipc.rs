@@ -11,7 +11,7 @@
 use ascent_aero::{fin_set_cn, nose_cn, total_cp_from_nose_m, Vehicle as AeroVehicle};
 use ascent_domain::vehicle::Vehicle as TreeVehicle;
 use ascent_sim::{
-    run_dispersion, Dispersion, DispersionSummary, PlanarVehicle, SimConfig, Variation,
+    run_dispersion_observed, Dispersion, DispersionSummary, PlanarVehicle, SimConfig, Variation,
     WindProfile,
 };
 use serde::{Deserialize, Serialize};
@@ -59,6 +59,19 @@ pub fn run(
     design: &Design,
     request: &DispersionRequest,
 ) -> Result<DispersionSummary, String> {
+    run_observed(tree, design, request, |_, _| true)
+        .map(|outcome| outcome.expect("uncancellable run cannot be cancelled"))
+}
+
+/// The job runner's entry: same run, with a progress observer that may
+/// cancel cooperatively (`Ok(None)`). The observer never touches the RNG
+/// stream, so observed and plain runs are byte-identical for a seed.
+pub fn run_observed(
+    tree: &TreeVehicle,
+    design: &Design,
+    request: &DispersionRequest,
+    on_progress: impl FnMut(u32, u32) -> bool,
+) -> Result<Option<DispersionSummary>, String> {
     let (rocket, motor, env) = build_flight(design)?;
     let vehicle = planar_vehicle_from_tree(tree)?;
     let wind = if request.base_wind_ms == 0.0 {
@@ -71,7 +84,16 @@ pub fn run(
         samples: capped_samples(request.samples),
         vary: request.vary.clone(),
     };
-    run_dispersion(&rocket, &motor, &env, &vehicle, &wind, &SimConfig::default(), &spec)
+    run_dispersion_observed(
+        &rocket,
+        &motor,
+        &env,
+        &vehicle,
+        &wind,
+        &SimConfig::default(),
+        &spec,
+        on_progress,
+    )
 }
 
 #[cfg(test)]

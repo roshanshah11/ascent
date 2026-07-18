@@ -3,6 +3,7 @@ import DispersionView from "./components/DispersionView";
 import EvidenceDrawer from "./components/EvidenceDrawer";
 import FlightMode from "./components/FlightMode";
 import Inspector from "./components/Inspector";
+import JobsPanel from "./components/JobsPanel";
 import MotorSelector from "./components/MotorSelector";
 import ReviewPanel from "./components/ReviewPanel";
 import SpreadPanel from "./components/SpreadPanel";
@@ -287,6 +288,7 @@ export default function App() {
             <Inspector design={design} onChange={edit} />
             <MotorSelector motors={motors} design={design} onChange={edit} />
           </div>
+          <JobsPanel studies={doc.studies} onDocChange={setDoc} />
           <DispersionView design={design} />
         </>
       ) : mode === "flight" ? (

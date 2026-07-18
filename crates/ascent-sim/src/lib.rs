@@ -11,7 +11,7 @@ pub mod summary;
 
 pub use atmosphere::AtmosphereModel;
 pub use dispersion::{
-    percentile, run_dispersion, CompactRun, Dispersion, DispersionSummary, LandingEllipse,
+    percentile, run_dispersion, run_dispersion_observed, CompactRun, Dispersion, DispersionSummary, LandingEllipse,
     Variation, VaryParam,
 };
 pub use engine::{engines, NativeEngine, SimEngine};

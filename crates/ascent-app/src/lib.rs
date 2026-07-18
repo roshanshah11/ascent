@@ -9,6 +9,7 @@ mod design;
 mod dispersion_ipc;
 mod document;
 mod evidence;
+mod jobs;
 mod project;
 mod review_ipc;
 mod study;
@@ -16,6 +17,7 @@ mod study;
 pub use command::Command;
 pub use credibility::{Factor, QuantityFlag, Regime, Scorecard};
 pub use document::{Document, DocumentState};
+pub use jobs::{JobEvent, JobId, JobRunner, JobStatus, JobView};
 pub use study::{study_input_hash, Study, StudyId, StudyKind, StudyResults};
 pub use design::{run_design, Design, ImportedMotor, MotorInfo, RunRecord, SpreadResult};
 pub use dispersion_ipc::DispersionRequest;
@@ -28,7 +30,10 @@ fn reference_design() -> Design {
     Design::reference()
 }
 
-type DocState<'a> = tauri::State<'a, std::sync::Mutex<Document>>;
+/// The document is shared between IPC commands and the job runner's
+/// worker thread, so it lives behind an Arc.
+type SharedDocument = std::sync::Arc<std::sync::Mutex<Document>>;
+type DocState<'a> = tauri::State<'a, SharedDocument>;
 
 fn doc_lock<'a>(state: &'a DocState<'_>) -> std::sync::MutexGuard<'a, Document> {
     state.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -136,10 +141,45 @@ fn solve_review(target_apogee_m: f64) -> Result<ascent_review::Repair, String> {
     review_ipc::repair(target_apogee_m)
 }
 
+#[tauri::command]
+fn enqueue_study_job(
+    runner: tauri::State<std::sync::Arc<JobRunner>>,
+    study_id: StudyId,
+) -> Result<JobId, String> {
+    runner.enqueue(study_id)
+}
+
+#[tauri::command]
+fn cancel_job(
+    runner: tauri::State<std::sync::Arc<JobRunner>>,
+    job_id: JobId,
+) -> Result<(), String> {
+    runner.cancel(job_id)
+}
+
+#[tauri::command]
+fn list_jobs(runner: tauri::State<std::sync::Arc<JobRunner>>) -> Vec<JobView> {
+    runner.jobs()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let doc: SharedDocument = std::sync::Arc::new(std::sync::Mutex::new(Document::default()));
     tauri::Builder::default()
-        .manage(std::sync::Mutex::new(Document::default()))
+        .manage(doc.clone())
+        .setup(move |app| {
+            use tauri::{Emitter, Manager};
+            let handle = app.handle().clone();
+            let runner = JobRunner::new(doc, move |event| {
+                let channel = match &event {
+                    JobEvent::Progress { .. } => "job-progress",
+                    JobEvent::Done { .. } => "job-done",
+                };
+                let _ = handle.emit(channel, &event);
+            });
+            app.manage(runner);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             reference_design,
             get_document,
@@ -159,7 +199,10 @@ pub fn run() {
             check_recovery,
             discard_recovery,
             flight_review,
-            solve_review
+            solve_review,
+            enqueue_study_job,
+            cancel_job,
+            list_jobs
         ])
         .run(tauri::generate_context!())
         .expect("error while running ascent");

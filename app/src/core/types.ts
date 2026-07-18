@@ -30,11 +30,49 @@ export interface Vehicle {
   parts: VehiclePart[];
 }
 
+export type StudyKind =
+  | { kind: "single_flight" }
+  | { kind: "dispersion"; flights: number }
+  | { kind: "motor_trade"; candidates: string[] }
+  | { kind: "stability_sweep"; param: string; from: number; to: number; steps: number };
+
+export interface StudyResults {
+  input_hash: string;
+  data: Record<string, unknown>;
+}
+
+export interface Study {
+  id: number;
+  name: string;
+  kind: StudyKind;
+  engine: string;
+  seed: number;
+  results?: StudyResults;
+}
+
 export interface DocumentState {
   vehicle: Vehicle;
   design: Design;
+  studies: Study[];
   can_undo: boolean;
   can_redo: boolean;
+}
+
+/** Payloads of the "job-progress" / "job-done" Tauri events. */
+export interface JobProgressEvent {
+  event: "progress";
+  job_id: number;
+  study_id: number;
+  completed: number;
+  total: number;
+}
+
+export interface JobDoneEvent {
+  event: "done";
+  job_id: number;
+  study_id: number;
+  status: "queued" | "running" | "done" | "cancelled" | "failed";
+  error: string | null;
 }
 
 /** Mirrors the serde tag layout of crates/ascent-app/src/command.rs. */
@@ -44,7 +82,10 @@ export type Command =
   | { cmd: "set_part_param"; id: number; param: string; value: unknown }
   | { cmd: "set_sim_param"; param: string; value: unknown }
   | { cmd: "select_motor"; designation: string }
-  | { cmd: "set_design"; design: Design };
+  | { cmd: "set_design"; design: Design }
+  | { cmd: "create_study"; name: string; kind: StudyKind; engine: string; seed: number }
+  | { cmd: "delete_study"; id: number }
+  | { cmd: "set_study_param"; id: number; param: string; value: unknown };
 
 export interface MotorInfo {
   designation: string;

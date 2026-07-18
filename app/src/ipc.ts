@@ -66,6 +66,14 @@ export function runDispersion(
   return invoke<DispersionSummary>("run_dispersion", { design, request });
 }
 
+export function enqueueStudyJob(studyId: number): Promise<number> {
+  return invoke<number>("enqueue_study_job", { studyId });
+}
+
+export function cancelJob(jobId: number): Promise<void> {
+  return invoke<void>("cancel_job", { jobId });
+}
+
 export function autosaveProject(project: Project): Promise<string> {
   return invoke<string>("autosave_project", { project });
 }
