@@ -17,3 +17,4 @@ thiserror.workspace = true
 
 [dev-dependencies]
 approx.workspace = true
+ascent-aero = { path = "../ascent-aero" }
