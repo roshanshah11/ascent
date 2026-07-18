@@ -67,13 +67,19 @@ perpendicular to `+z_b`:
 
 `F_normal_b = -0.5 * rho * |v_air|^2 * A_ref * CN_alpha * alpha_vector`,
 
-where `alpha_vector` is the small-angle transverse airflow direction divided
-by the forward axial component. The force is perpendicular to the body axis
-and opposes angle of attack. Its restoring pitch/yaw moment is the cross
-product from CG to CP, with lever arm `(CP - CG)` along the aft direction.
-Pitch and yaw share the configured longitudinal moment of inertia. The axial
-roll moment and `omega_z` are constrained to zero because roll dynamics are
-outside this tier.
+where `v_lateral` is the body-frame airflow perpendicular to `+z_b`,
+`alpha = atan2(|v_lateral|, v_axial)`, and `alpha_vector` has magnitude
+`alpha` in the direction of `v_lateral`. Thus the normal-force magnitude is
+`0.5 * rho * |v_air|^2 * A_ref * CN_alpha * alpha`, applied opposite the
+transverse airflow direction. This corrects the earlier ambiguous
+transverse/axial wording, which could be read as an erroneous `tan(alpha)`
+force law. The model remains limited to the documented small-angle validity
+envelope. The force is perpendicular to the body axis and opposes angle of
+attack. Its restoring pitch/yaw moment is the cross product from CG to CP,
+with lever arm `(CP - CG)` along the aft direction. Pitch and yaw share the
+configured longitudinal moment of inertia. The axial roll moment and
+`omega_z` are constrained to zero because roll dynamics are outside this
+tier.
 
 In recovery descent, the existing body-plus-parachute `Cd*A` model acts
 opposite the three-dimensional wind-relative velocity. Attitude is frozen at
