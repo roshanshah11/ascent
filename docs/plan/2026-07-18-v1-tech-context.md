@@ -71,7 +71,7 @@ Performance rules from the docs: instanced everything; mutate matrices in `useFr
 
 ## MCP server (roadmap step 4)
 
-- Spec finalizes **2026-07-28** — build `ascent-mcp` against the final spec, not the RC. stdio transport; official Rust SDK (`rmcp`) — resolve on context7 when starting; adopt the **Tasks extension** for long-running dispersion jobs.
+- Build `ascent-mcp` **now against the 2026-07-28 release candidate** (spec finalizes July 28; RC→final churn is historically minor). stdio transport; official Rust SDK (`rmcp`) — resolve on context7 when starting; adopt the **Tasks extension** for long-running dispersion jobs. Reconcile against the final spec after the 28th — budget one small follow-up commit, not a rebuild.
 - The server is a thin adapter over `propose_batch`/`apply_batch`/`cli::run_study` — zero new mutation logic. If the SDK fights the no-network invariant, hand-roll JSON-RPC over stdio; the protocol is small.
 
 ## Invariants (restated so a fresh session cannot miss them)
