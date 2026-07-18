@@ -1,24 +1,20 @@
-// Procedural mesh generation from a Design (v0.2 Step 10). Pure module:
-// no renderer imports, no DOM — the post-redesign renderer (WebGPU or
-// wgpu-native) consumes the same arrays. Bodies of revolution + plates
-// cover the market; there is deliberately no CAD kernel here.
-//
-// Geometry derivation is provisional until the vehicle editor lands
-// (same status as planar_vehicle_for on the Rust side): nose = 3 calibers
-// of tangent ogive, body = 9 calibers of cylinder (12-caliber stack,
-// matching the planar model's provisional length), 3 fins. Only the
-// diameter comes from the Design today; the proportions are the contract.
+// Procedural mesh from the vehicle model tree (v0.3 Step 3). Pure module:
+// no renderer imports, no DOM — the post-redesign renderer consumes the
+// same arrays. The tree that drives this mesh is the same tree that
+// drives Barrowman and the mass rollup, so the rendered rocket and the
+// simulated rocket can never disagree. Part ranges carry PartIds so the
+// viewport can highlight tree selections.
 
-import type { Design } from "./types";
+import type { Vehicle, VehiclePart } from "./types";
 
-export const NOSE_CALIBERS = 3;
-export const BODY_CALIBERS = 9;
-export const FIN_COUNT = 3;
 export const RADIAL_SEGMENTS = 24;
 export const NOSE_RINGS = 16;
 
 export interface PartRange {
-  name: string;
+  /** PartId of the tree node this range renders. */
+  id: number;
+  /** Part kind tag ("nose_cone", "body_tube", "fin_set", …). */
+  kind: string;
   /** First index into `indices`. */
   start: number;
   /** Number of indices (triangles * 3). */
@@ -35,9 +31,9 @@ export interface RocketMesh {
 /**
  * Tangent-ogive profile radius at axial station x from the tip (0 ≤ x ≤ L).
  * Classic construction: ogive circle radius rho = (R² + L²) / (2R); then
- * y(x) = sqrt(rho² − (L − x)²) + R − rho. This is the same shape whose
- * center of pressure sits at ≈ 0.466·L in ascent-aero's Barrowman model —
- * the aero math and the rendered geometry describe one rocket.
+ * y(x) = sqrt(rho² − (L − x)²) + R − rho. This is the same shape family
+ * whose center of pressure sits at ≈ 0.466·L in ascent-aero's Barrowman
+ * model — the aero math and the rendered geometry describe one rocket.
  */
 export function ogiveRadius(x: number, length: number, baseRadius: number): number {
   const rho = (baseRadius * baseRadius + length * length) / (2 * baseRadius);
@@ -45,24 +41,33 @@ export function ogiveRadius(x: number, length: number, baseRadius: number): numb
   return Math.sqrt(rho * rho - dy * dy) + baseRadius - rho;
 }
 
-/** Overall stack height in meters for a given design (12 calibers). */
-export function stackHeightM(design: Design): number {
-  return (design.diameter_mm / 1000) * (NOSE_CALIBERS + BODY_CALIBERS);
+const num = (part: VehiclePart, field: string): number => {
+  const value = part.kind[field];
+  return typeof value === "number" ? value : 0;
+};
+
+const isStructural = (part: VehiclePart): boolean =>
+  part.kind.type === "nose_cone" ||
+  part.kind.type === "body_tube" ||
+  part.kind.type === "transition";
+
+const structuralLength = (part: VehiclePart): number =>
+  isStructural(part) ? num(part, "length_m") : 0;
+
+/** Airframe stack height in meters (structural parts only). */
+export function stackHeightM(vehicle: Vehicle): number {
+  return vehicle.parts.reduce((sum, p) => sum + structuralLength(p), 0);
 }
 
-export function designToMesh(design: Design): RocketMesh {
-  const d = design.diameter_mm / 1000; // caliber in meters
-  const r = d / 2;
-  const noseLen = d * NOSE_CALIBERS;
-  const bodyLen = d * BODY_CALIBERS;
-
+export function vehicleToMesh(vehicle: Vehicle): RocketMesh {
+  const totalLen = stackHeightM(vehicle);
   const positions: number[] = [];
   const normals: number[] = [];
   const indices: number[] = [];
   const parts: PartRange[] = [];
 
-  // Y is up: base of the body at y = 0, nose tip at y = totalLen.
-  // A ring is RADIAL_SEGMENTS vertices at height y with radius radius.
+  // Y is up: aft end of the stack at y = 0, nose tip at y = totalLen.
+  // Tree stations x are measured from the tip, so y = totalLen − x.
   const pushRing = (y: number, radius: number, slope: number): number => {
     const first = positions.length / 3;
     for (let s = 0; s < RADIAL_SEGMENTS; s++) {
@@ -86,64 +91,109 @@ export function designToMesh(design: Design): RocketMesh {
     }
   };
 
-  // --- Body cylinder: two rings, zero slope. --------------------------
-  const bodyStart = indices.length;
-  const bottom = pushRing(0, r, 0);
-  const top = pushRing(bodyLen, r, 0);
-  stitchRings(bottom, top);
-  parts.push({ name: "body", start: bodyStart, count: indices.length - bodyStart });
+  const beginPart = (): number => indices.length;
+  const endPart = (part: VehiclePart, start: number) => {
+    parts.push({
+      id: part.id,
+      kind: part.kind.type,
+      start,
+      count: indices.length - start,
+    });
+  };
 
-  // --- Nose: tangent-ogive revolve, tip at totalLen. ------------------
-  const noseStart = indices.length;
-  let prevRing = top; // ogive base radius equals body radius by construction
-  for (let i = 1; i <= NOSE_RINGS; i++) {
-    // Station measured from the BASE of the nose (x in ogiveRadius runs
-    // tip→base, so convert): ring i sits at height bodyLen + t*noseLen.
-    const t = i / NOSE_RINGS;
-    const x = noseLen * (1 - t); // distance from the tip
-    const radius = i === NOSE_RINGS ? 0 : ogiveRadius(x, noseLen, r);
-    // Slope dr/dy for the normal, via central difference on the profile.
-    const h = noseLen / (NOSE_RINGS * 4);
-    const slope =
-      (ogiveRadius(Math.max(0, x - h), noseLen, r) -
-        ogiveRadius(Math.min(noseLen, x + h), noseLen, r)) /
-      (-2 * h);
-    const ring = pushRing(bodyLen + t * noseLen, radius, slope);
-    stitchRings(prevRing, ring);
-    prevRing = ring;
-  }
-  parts.push({ name: "nose", start: noseStart, count: indices.length - noseStart });
-
-  // --- Fins: flat trapezoid plates, evenly spaced around the base. ----
-  // Root chord 2 calibers up from the base, tip chord 1 caliber, span 1.5.
-  const rootChord = 2 * d;
-  const tipChord = 1 * d;
-  const span = 1.5 * d;
-  for (let f = 0; f < FIN_COUNT; f++) {
-    const finStart = indices.length;
-    const a = (f / FIN_COUNT) * Math.PI * 2;
-    const ux = Math.cos(a); // outward direction in the XZ plane
-    const uz = Math.sin(a);
-    const base = positions.length / 3;
-    // Four corners in the fin's own plane (outward u, up y):
-    //   root leading (r, rootChord) — root trailing (r, 0)
-    //   tip trailing (r+span, 0)    — tip leading (r+span, tipChord... swept)
-    const corners: Array<[number, number]> = [
-      [r, rootChord], // root leading edge
-      [r, 0], // root trailing edge
-      [r + span, 0], // tip trailing edge
-      [r + span, tipChord], // tip leading edge
-    ];
-    // Normal of the plate is perpendicular to the outward direction.
-    const nx = -uz;
-    const nz = ux;
-    for (const [out, y] of corners) {
-      positions.push(out * ux, y, out * uz);
-      normals.push(nx, 0, nz);
+  const emitFins = (part: VehiclePart, parentForeX: number, parentLen: number, r: number) => {
+    const start = beginPart();
+    const count = Math.max(1, Math.round(num(part, "count")));
+    const rootChord = num(part, "root_chord_m");
+    const tipChord = num(part, "tip_chord_m");
+    const span = num(part, "span_m");
+    const sweep = num(part, "sweep_m");
+    // Trailing edge flush with the parent's aft end (VEHICLE_TREE.md).
+    const rootLeX = parentForeX + parentLen - rootChord;
+    const yRootLe = totalLen - rootLeX;
+    const yRootTe = yRootLe - rootChord;
+    const yTipLe = yRootLe - sweep;
+    const yTipTe = yTipLe - tipChord;
+    for (let f = 0; f < count; f++) {
+      const a = (f / count) * Math.PI * 2;
+      const ux = Math.cos(a); // outward direction in the XZ plane
+      const uz = Math.sin(a);
+      const base = positions.length / 3;
+      const corners: Array<[number, number]> = [
+        [r, yRootLe],
+        [r, yRootTe],
+        [r + span, yTipTe],
+        [r + span, yTipLe],
+      ];
+      // Normal of the plate is perpendicular to the outward direction.
+      const nx = -uz;
+      const nz = ux;
+      for (const [out, y] of corners) {
+        positions.push(out * ux, y, out * uz);
+        normals.push(nx, 0, nz);
+      }
+      indices.push(base, base + 1, base + 2);
+      indices.push(base, base + 2, base + 3);
     }
-    indices.push(base, base + 1, base + 2);
-    indices.push(base, base + 2, base + 3);
-    parts.push({ name: `fin-${f}`, start: finStart, count: indices.length - finStart });
+    endPart(part, start);
+  };
+
+  let cursor = 0; // station of the current part's fore end, from the tip
+  for (const part of vehicle.parts) {
+    const foreX = cursor;
+    const length = structuralLength(part);
+    const yFore = totalLen - foreX;
+    const yAft = yFore - length;
+
+    if (part.kind.type === "nose_cone") {
+      const start = beginPart();
+      const baseR = num(part, "base_radius_m");
+      const shape = part.kind.shape as string;
+      const radiusAt = (x: number) =>
+        shape === "conical" ? (baseR * x) / length : ogiveRadius(x, length, baseR);
+      // Rings run base → tip; station x measured from the tip.
+      let prevRing = pushRing(yAft, baseR, 0);
+      for (let i = 1; i <= NOSE_RINGS; i++) {
+        const t = i / NOSE_RINGS;
+        const x = length * (1 - t); // distance from the tip
+        const radius = i === NOSE_RINGS ? 0 : radiusAt(x);
+        // Slope dr/dy for the normal, via central difference on the profile.
+        const h = length / (NOSE_RINGS * 4);
+        const slope =
+          (radiusAt(Math.max(0, x - h)) - radiusAt(Math.min(length, x + h))) / (-2 * h);
+        const ring = pushRing(yAft + t * length, radius, slope);
+        stitchRings(prevRing, ring);
+        prevRing = ring;
+      }
+      endPart(part, start);
+    } else if (part.kind.type === "body_tube") {
+      const start = beginPart();
+      const r = num(part, "outer_radius_m");
+      const bottom = pushRing(yAft, r, 0);
+      const top = pushRing(yFore, r, 0);
+      stitchRings(bottom, top);
+      endPart(part, start);
+    } else if (part.kind.type === "transition") {
+      const start = beginPart();
+      const rFore = num(part, "fore_radius_m");
+      const rAft = num(part, "aft_radius_m");
+      const slope = (rAft - rFore) / (length || 1);
+      const bottom = pushRing(yAft, rAft, -slope);
+      const top = pushRing(yFore, rFore, -slope);
+      stitchRings(bottom, top);
+      endPart(part, start);
+    }
+
+    for (const child of part.children) {
+      if (child.kind.type === "fin_set") {
+        const r =
+          part.kind.type === "body_tube"
+            ? num(part, "outer_radius_m")
+            : num(part, "base_radius_m");
+        emitFins(child, foreX, length, r);
+      }
+    }
+    cursor += length;
   }
 
   return {

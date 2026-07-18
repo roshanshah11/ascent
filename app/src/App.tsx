@@ -274,7 +274,7 @@ export default function App() {
         <>
           <div style={{ display: "flex", gap: 32 }}>
             <div>
-              {view3d ? <Viewport3D design={design} /> : <Viewport design={design} />}
+              {view3d ? <Viewport3D vehicle={doc.vehicle} /> : <Viewport design={design} />}
               <div style={{ marginTop: 4 }}>
                 <button onClick={() => setView3d(false)} disabled={!view3d}>
                   2D

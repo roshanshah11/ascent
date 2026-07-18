@@ -214,7 +214,9 @@ fn validate_part(part: &Part, seen: &mut std::collections::BTreeSet<u32>) -> Res
 }
 
 /// Worksheet mass model per part (see VEHICLE_TREE.md):
-/// - NoseCone / BodyTube / Transition: CG at mid-length, thin-rod own MOI.
+/// - NoseCone: thin conical shell — CG at 2/3·L aft of the tip (the same
+///   convention ascent-aero's dry_cg_from_nose_m uses), thin-rod own MOI.
+/// - BodyTube / Transition: CG at mid-length, thin-rod own MOI.
 /// - FinSet: point mass, CG half a root chord ahead of the parent's aft end.
 /// - MotorMount: CG at mount mid-length, thin-rod own MOI.
 /// - Parachute / MassComponent: point mass at its position.
@@ -226,9 +228,14 @@ fn collect_mass_items(
 ) {
     let mass_kg = part.kind.mass_g() / 1000.0;
     match &part.kind {
-        PartKind::NoseCone { length_m, .. }
-        | PartKind::BodyTube { length_m, .. }
-        | PartKind::Transition { length_m, .. } => {
+        PartKind::NoseCone { length_m, .. } => {
+            items.push((
+                mass_kg,
+                parent_fore_m + 2.0 / 3.0 * length_m,
+                mass_kg * length_m * length_m / 12.0,
+            ));
+        }
+        PartKind::BodyTube { length_m, .. } | PartKind::Transition { length_m, .. } => {
             items.push((
                 mass_kg,
                 parent_fore_m + length_m / 2.0,
@@ -356,12 +363,12 @@ mod tests {
     /// the documented per-part conventions (datum = nose tip).
     #[test]
     fn reference_cg_matches_the_hand_worksheet() {
-        // nose:  8 g at 0.5·0.075                     = 0.0375 m
+        // nose:  8 g at (2/3)·0.075                   = 0.05 m
         // tube: 15 g at 0.075 + 0.5·0.225             = 0.1875 m
         // fins:  6 g at 0.075 + 0.225 − 0.5·0.05      = 0.275 m
         // chute: 3 g at 0.075 + 0.05                  = 0.125 m
         // mount: 2 g at 0.075 + 0.155 + 0.5·0.07      = 0.265 m
-        let expected = (8.0 * 0.0375 + 15.0 * 0.1875 + 6.0 * 0.275 + 3.0 * 0.125 + 2.0 * 0.265)
+        let expected = (8.0 * 0.05 + 15.0 * 0.1875 + 6.0 * 0.275 + 3.0 * 0.125 + 2.0 * 0.265)
             / 34.0;
         let props = reference_vehicle().mass_properties();
         assert!(
@@ -380,7 +387,7 @@ mod tests {
         let rod = |m_kg: f64, l: f64| m_kg * l * l / 12.0;
         let transfer = |m_kg: f64, x: f64| m_kg * (x - cg) * (x - cg);
         let expected = rod(0.008, 0.075)
-            + transfer(0.008, 0.0375)
+            + transfer(0.008, 0.05)
             + rod(0.015, 0.225)
             + transfer(0.015, 0.1875)
             + transfer(0.006, 0.275)
@@ -462,8 +469,8 @@ mod tests {
         let props = v.mass_properties();
         assert_eq!(props.total_mass_g, 40.0);
         // New tube's CG term: 6 g at 0.3 + 0.05 = 0.35 m.
-        let expected_cg = (34.0 * (5.6675 / 34.0) + 6.0 * 0.35) / 40.0;
-        // 5.6675/34 is the reference CG from the worksheet fixture above.
+        let expected_cg = (34.0 * (5.7675 / 34.0) + 6.0 * 0.35) / 40.0;
+        // 5.7675/34 is the reference CG from the worksheet fixture above.
         assert!((props.cg_from_nose_m - expected_cg).abs() < 1e-9);
         assert!((v.stack_length_m() - 0.4).abs() < 1e-12);
     }

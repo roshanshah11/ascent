@@ -90,10 +90,12 @@ fn run_evidence(design: Design) -> Result<EvidenceReport, String> {
 
 #[tauri::command]
 fn run_dispersion(
+    state: DocState,
     design: Design,
     request: DispersionRequest,
 ) -> Result<ascent_sim::DispersionSummary, String> {
-    dispersion_ipc::run(&design, &request)
+    let tree = doc_lock(&state).vehicle.clone();
+    dispersion_ipc::run(&tree, &design, &request)
 }
 
 #[tauri::command]

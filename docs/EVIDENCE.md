@@ -81,3 +81,16 @@ With mass, drag, and gravity matched, Ascent's vertical kernel reproduces
 OpenRocket's ascent to within 1.4% on apogee and 0.1% on max velocity, with
 every residual difference traced to a named modeling choice. The Day 3 exit
 gate — "evidence page states what agrees, what differs, why" — is met.
+
+## 2026-07-18 — v0.3 Step 3: planar inputs now derive from the vehicle tree
+
+The dispersion path's rigid-body inputs switched from provisional constants to tree-derived values (`planar_vehicle_from_tree` in `crates/ascent-app/src/dispersion_ipc.rs`):
+
+| Quantity | Provisional (v0.2) | Tree-derived (v0.3) |
+|---|---|---|
+| CNα | 10.0 (assumed) | nose (2.0, slender body) + Barrowman fin term from the actual planform |
+| CP | CG + 2 calibers (assumed margin) | `total_cp_from_nose_m` on the aero view of the tree |
+| CG | 0.55 × stack length | mass-rollup CG from per-part worksheet model (`docs/VEHICLE_TREE.md`) |
+| Pitch MOI | m·L²/12 of the whole stack | per-part thin-rod + parallel-axis rollup |
+
+The golden regression pin (vertical 1-DOF) is untouched — that path never used the provisional constants. Dispersion percentile values shift within the same family (fleet p50 still gated 250–450 m by test); the planar calm-wind-equals-vertical cross-check in ascent-sim is unaffected because it constructs its own vehicle. The mesh (`app/src/core/mesh.ts`) now renders the same tree: nose length/shape, tube length, and fin planform all come from `reference_vehicle()` rather than fixed 12-caliber proportions, and part ranges carry PartIds for tree-selection highlighting.

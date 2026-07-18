@@ -7,6 +7,7 @@
 //! module once the hand-computed fixture (docs/BARROWMAN_WORKSHEET.md)
 //! exists; mass properties here are independent of it.
 
+use ascent_domain::vehicle::{PartKind, Vehicle as TreeVehicle};
 use ascent_domain::Motor;
 use serde::{Deserialize, Serialize};
 
@@ -85,6 +86,156 @@ pub struct Vehicle {
 }
 
 impl Vehicle {
+    /// Derive the aero view from the domain model tree (v0.3 Step 3) —
+    /// the tree is the single source of truth; this flattening is how
+    /// Barrowman and stability consume it. Multiple body tubes merge
+    /// into one equivalent tube (summed length and mass, max diameter);
+    /// the first fin set is the stabilizing set (trailing edge flush
+    /// with its parent's aft end); mounts, chutes, and mass components
+    /// become point masses at their absolute stations.
+    pub fn from_tree(tree: &TreeVehicle) -> Result<(Vehicle, crate::NoseShape), String> {
+        tree.validate()?;
+        let mut nose: Option<(NoseCone, crate::NoseShape)> = None;
+        let mut body_length = 0.0;
+        let mut body_mass = 0.0;
+        let mut body_diameter: f64 = 0.0;
+        let mut fins: Option<FinSet> = None;
+        let mut point_masses = Vec::new();
+        let mut motor_position = None;
+
+        let mut cursor = 0.0;
+        for part in &tree.parts {
+            let fore = cursor;
+            let length = match &part.kind {
+                PartKind::NoseCone {
+                    shape,
+                    length_m,
+                    base_radius_m,
+                    mass_g,
+                } => {
+                    if nose.is_some() {
+                        return Err("only one nose cone is supported".into());
+                    }
+                    let aero_shape = match shape {
+                        ascent_domain::vehicle::NoseShape::TangentOgive => crate::NoseShape::Ogive,
+                        ascent_domain::vehicle::NoseShape::Conical => crate::NoseShape::Conical,
+                    };
+                    nose = Some((
+                        NoseCone {
+                            length_m: *length_m,
+                            base_diameter_m: 2.0 * base_radius_m,
+                            mass_kg: mass_g / 1000.0,
+                        },
+                        aero_shape,
+                    ));
+                    *length_m
+                }
+                PartKind::BodyTube {
+                    length_m,
+                    outer_radius_m,
+                    mass_g,
+                    ..
+                } => {
+                    body_length += length_m;
+                    body_mass += mass_g / 1000.0;
+                    body_diameter = body_diameter.max(2.0 * outer_radius_m);
+                    *length_m
+                }
+                PartKind::Transition {
+                    length_m,
+                    aft_radius_m,
+                    mass_g,
+                    ..
+                } => {
+                    // Aero transition handling is future work; mass-wise it
+                    // folds into the equivalent body tube.
+                    body_length += length_m;
+                    body_mass += mass_g / 1000.0;
+                    body_diameter = body_diameter.max(2.0 * aft_radius_m);
+                    *length_m
+                }
+                _ => 0.0,
+            };
+            for child in &part.children {
+                match &child.kind {
+                    PartKind::FinSet {
+                        count,
+                        root_chord_m,
+                        tip_chord_m,
+                        span_m,
+                        sweep_m,
+                        mass_g,
+                        ..
+                    } => {
+                        if fins.is_some() {
+                            return Err("only one fin set is supported".into());
+                        }
+                        fins = Some(FinSet {
+                            count: *count,
+                            root_chord_m: *root_chord_m,
+                            tip_chord_m: *tip_chord_m,
+                            span_m: *span_m,
+                            sweep_m: *sweep_m,
+                            position_from_nose_m: fore + length - root_chord_m,
+                            mass_kg: mass_g / 1000.0,
+                        });
+                    }
+                    PartKind::MotorMount {
+                        position_m, mass_g, ..
+                    } => {
+                        motor_position = Some(fore + position_m);
+                        point_masses.push(PointMass {
+                            name: "motor mount".into(),
+                            mass_kg: mass_g / 1000.0,
+                            position_from_nose_m: fore + position_m,
+                        });
+                    }
+                    PartKind::Parachute {
+                        position_m, mass_g, ..
+                    } => point_masses.push(PointMass {
+                        name: "parachute".into(),
+                        mass_kg: mass_g / 1000.0,
+                        position_from_nose_m: fore + position_m,
+                    }),
+                    PartKind::MassComponent {
+                        name,
+                        position_m,
+                        mass_g,
+                    } => point_masses.push(PointMass {
+                        name: name.clone(),
+                        mass_kg: mass_g / 1000.0,
+                        position_from_nose_m: fore + position_m,
+                    }),
+                    _ => {}
+                }
+            }
+            cursor += length;
+        }
+
+        let (nose, shape) = nose.ok_or("vehicle needs a nose cone")?;
+        if body_length == 0.0 {
+            return Err("vehicle needs at least one body tube".into());
+        }
+        let fins = fins.ok_or("vehicle needs a fin set")?;
+        let motor_position_from_nose_m =
+            motor_position.unwrap_or(nose.length_m + body_length - 0.07);
+        Ok((
+            Vehicle {
+                name: tree.name.clone(),
+                nose,
+                body: BodyTube {
+                    length_m: body_length,
+                    outer_diameter_m: body_diameter,
+                    mass_kg: body_mass,
+                },
+                fins,
+                point_masses,
+                motor_position_from_nose_m,
+            },
+            shape,
+        ))
+    }
+
     pub fn length_m(&self) -> f64 {
         self.nose.length_m + self.body.length_m
     }
@@ -132,5 +283,78 @@ impl Vehicle {
         let motor_mass = motor.mass_at(t);
         (dry * self.dry_cg_from_nose_m() + motor_mass * self.motor_cg_from_nose_m(motor))
             / (dry + motor_mass)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{barrowman, NoseShape};
+    use ascent_domain::vehicle::reference_vehicle;
+
+    /// The conversion must agree exactly with a hand-built aero vehicle
+    /// of identical dimensions — same CP, same CNα, same dry CG inputs.
+    #[test]
+    fn reference_tree_converts_to_the_hand_built_aero_vehicle() {
+        let (converted, shape) = Vehicle::from_tree(&reference_vehicle()).unwrap();
+        assert!(matches!(shape, NoseShape::Ogive));
+        let hand_built = Vehicle {
+            name: "Estes Alpha III".into(),
+            nose: NoseCone {
+                length_m: 0.075,
+                base_diameter_m: 0.025,
+                mass_kg: 0.008,
+            },
+            body: BodyTube {
+                length_m: 0.225,
+                outer_diameter_m: 0.025,
+                mass_kg: 0.015,
+            },
+            fins: FinSet {
+                count: 3,
+                root_chord_m: 0.05,
+                tip_chord_m: 0.025,
+                span_m: 0.0375,
+                sweep_m: 0.0,
+                position_from_nose_m: 0.075 + 0.225 - 0.05,
+                mass_kg: 0.006,
+            },
+            point_masses: vec![],
+            motor_position_from_nose_m: 0.075 + 0.155,
+        };
+        let cp_converted = barrowman::total_cp_from_nose_m(&converted, NoseShape::Ogive);
+        let cp_hand = barrowman::total_cp_from_nose_m(&hand_built, NoseShape::Ogive);
+        assert_eq!(cp_converted, cp_hand, "CP must match exactly");
+        assert_eq!(converted.length_m(), 0.3);
+        assert_eq!(converted.diameter_m(), 0.025);
+        assert!((converted.motor_position_from_nose_m - 0.23).abs() < 1e-12);
+        // Point masses (chute + mount hardware) carry over.
+        assert_eq!(converted.point_masses.len(), 2);
+    }
+
+    #[test]
+    fn a_fin_edit_in_the_tree_moves_the_cp() {
+        let tree = reference_vehicle();
+        let (v0, shape) = Vehicle::from_tree(&tree).unwrap();
+        let cp0 = barrowman::total_cp_from_nose_m(&v0, shape);
+        let mut bigger = tree.clone();
+        if let ascent_domain::vehicle::PartKind::FinSet { span_m, .. } =
+            &mut bigger.parts[1].children[0].kind
+        {
+            *span_m = 0.06;
+        }
+        let (v1, shape) = Vehicle::from_tree(&bigger).unwrap();
+        let cp1 = barrowman::total_cp_from_nose_m(&v1, shape);
+        assert!(cp1 > cp0, "bigger fins pull the CP aft: {cp1} vs {cp0}");
+    }
+
+    #[test]
+    fn conversion_requires_a_complete_airframe() {
+        let mut no_fins = reference_vehicle();
+        no_fins.parts[1].children.remove(0);
+        assert!(Vehicle::from_tree(&no_fins).unwrap_err().contains("fin set"));
+        let mut no_nose = reference_vehicle();
+        no_nose.parts.remove(0);
+        assert!(Vehicle::from_tree(&no_nose).unwrap_err().contains("nose"));
     }
 }

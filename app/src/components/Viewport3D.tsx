@@ -1,20 +1,22 @@
-// Thin 3D view over designToMesh (v0.2 Step 10). Hand-rolled canvas
+// Thin 3D view over vehicleToMesh (v0.3 Step 3): renders the same tree
+// that drives Barrowman and the mass rollup. Hand-rolled canvas
 // projector — deliberately renderer-agnostic and disposable: the mesh
 // module owns the geometry, and the redesign pass can swap this file for
 // WebGPU/wgpu without touching mesh.ts. No external 3D dependency (zero
 // new deps rule). Orbit by dragging.
 import { useEffect, useRef, useState } from "react";
-import { designToMesh, stackHeightM } from "../core/mesh";
-import type { Design } from "../core/types";
+import { stackHeightM, vehicleToMesh } from "../core/mesh";
+import type { Vehicle } from "../core/types";
 
 const W = 300;
 const H = 380;
 const PART_COLOR: Record<string, string> = {
-  nose: "#c74b3c",
-  body: "#d8dbe0",
+  nose_cone: "#c74b3c",
+  body_tube: "#d8dbe0",
+  transition: "#d8dbe0",
 };
 
-export default function Viewport3D({ design }: { design: Design }) {
+export default function Viewport3D({ vehicle }: { vehicle: Vehicle }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [orbit, setOrbit] = useState({ yaw: 0.6, pitch: 0.25 });
   const dragRef = useRef<{ x: number; y: number } | null>(null);
@@ -25,8 +27,9 @@ export default function Viewport3D({ design }: { design: Design }) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const mesh = designToMesh(design);
-    const height = stackHeightM(design);
+    const mesh = vehicleToMesh(vehicle);
+    const height = stackHeightM(vehicle);
+    if (height <= 0) return;
     const scale = (H * 0.7) / height; // fit the stack in the frame
     const cy = height / 2;
 
@@ -61,7 +64,7 @@ export default function Viewport3D({ design }: { design: Design }) {
           b,
           c,
           depth: (projected[a].depth + projected[b].depth + projected[c].depth) / 3,
-          part: part.name,
+          part: part.kind,
         });
       }
     }
@@ -76,7 +79,7 @@ export default function Viewport3D({ design }: { design: Design }) {
       const cross =
         (pb.sx - pa.sx) * (pc.sy - pa.sy) - (pb.sy - pa.sy) * (pc.sx - pa.sx);
       const facing = cross < 0;
-      if (!facing && f.part !== "body" && f.part !== "nose") {
+      if (!facing && f.part === "fin_set") {
         // Fins are plates: render both sides. Revolved parts cull backfaces.
       } else if (!facing) {
         continue;
@@ -97,8 +100,8 @@ export default function Viewport3D({ design }: { design: Design }) {
     ctx.fillStyle = "#9aa1ab";
     ctx.font = "12px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(`${design.name} · drag to orbit`, W / 2, H - 8);
-  }, [design, orbit]);
+    ctx.fillText(`${vehicle.name} · drag to orbit`, W / 2, H - 8);
+  }, [vehicle, orbit]);
 
   return (
     <canvas
@@ -106,7 +109,7 @@ export default function Viewport3D({ design }: { design: Design }) {
       width={W}
       height={H}
       role="img"
-      aria-label={`3D view of ${design.name}`}
+      aria-label={`3D view of ${vehicle.name}`}
       style={{ cursor: "grab", touchAction: "none" }}
       onPointerDown={(e) => {
         dragRef.current = { x: e.clientX, y: e.clientY };

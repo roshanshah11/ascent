@@ -28,7 +28,8 @@ The vehicle model tree (`crates/ascent-domain/src/vehicle.rs`) is the single sou
 
 | Part | CG station | Own MOI |
 |---|---|---|
-| NoseCone / BodyTube / Transition | fore + L/2 | thin rod, `m·L²/12` |
+| NoseCone | fore + 2L/3 (thin conical shell — same convention as ascent-aero) | thin rod, `m·L²/12` |
+| BodyTube / Transition | fore + L/2 | thin rod, `m·L²/12` |
 | FinSet | parent aft − root_chord/2 | point mass |
 | MotorMount | fore + position + L/2 | thin rod, `m·L²/12` |
 | Parachute / MassComponent | fore + position | point mass |

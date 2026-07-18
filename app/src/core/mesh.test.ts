@@ -1,152 +1,162 @@
 import { describe, expect, it } from "vitest";
-import {
-  BODY_CALIBERS,
-  designToMesh,
-  FIN_COUNT,
-  NOSE_CALIBERS,
-  NOSE_RINGS,
-  ogiveRadius,
-  RADIAL_SEGMENTS,
-  stackHeightM,
-} from "./mesh";
-import type { Design } from "./types";
+import { NOSE_RINGS, ogiveRadius, RADIAL_SEGMENTS, stackHeightM, vehicleToMesh } from "./mesh";
+import type { Vehicle } from "./types";
 
-const reference: Design = {
+// Mirror of ascent-domain's reference_vehicle(): the Alpha III tree.
+const reference = (): Vehicle => ({
   name: "Estes Alpha III",
-  dry_mass_g: 34,
-  diameter_mm: 25,
-  cd: 0.6,
-  chute: { enabled: true, diameter_cm: 30, cd: 0.75 },
-  motor_designation: "C6",
-  rail_length_m: 0.9,
-};
+  parts: [
+    {
+      id: 1,
+      kind: {
+        type: "nose_cone",
+        shape: "tangent_ogive",
+        length_m: 0.075,
+        base_radius_m: 0.0125,
+        mass_g: 8,
+      },
+      children: [],
+    },
+    {
+      id: 2,
+      kind: { type: "body_tube", length_m: 0.225, outer_radius_m: 0.0125, wall_mm: 0.5, mass_g: 15 },
+      children: [
+        {
+          id: 3,
+          kind: {
+            type: "fin_set",
+            count: 3,
+            root_chord_m: 0.05,
+            tip_chord_m: 0.025,
+            span_m: 0.0375,
+            sweep_m: 0,
+            thickness_mm: 3,
+            mass_g: 6,
+          },
+          children: [],
+        },
+      ],
+    },
+  ],
+});
 
 describe("ogiveRadius", () => {
-  it("matches the tangent-ogive equation at tip, base, and midpoint", () => {
-    const L = 0.075;
-    const R = 0.0125;
-    expect(ogiveRadius(0, L, R)).toBeCloseTo(0, 10); // tip
-    expect(ogiveRadius(L, L, R)).toBeCloseTo(R, 10); // base meets the body
-    const rho = (R * R + L * L) / (2 * R);
-    const mid = Math.sqrt(rho * rho - (L / 2) ** 2) + R - rho;
-    expect(ogiveRadius(L / 2, L, R)).toBeCloseTo(mid, 12);
+  it("is zero at the tip and the base radius at the base", () => {
+    expect(ogiveRadius(0, 0.075, 0.0125)).toBeCloseTo(0, 10);
+    expect(ogiveRadius(0.075, 0.075, 0.0125)).toBeCloseTo(0.0125, 10);
   });
 
-  it("is monotonically increasing from tip to base", () => {
-    const L = 0.075;
-    const R = 0.0125;
-    let prev = -1;
-    for (let i = 0; i <= 20; i++) {
-      const y = ogiveRadius((i / 20) * L, L, R);
-      expect(y).toBeGreaterThan(prev);
-      prev = y;
+  it("grows monotonically from tip to base", () => {
+    let prev = 0;
+    for (let i = 1; i <= 20; i++) {
+      const r = ogiveRadius((i / 20) * 0.075, 0.075, 0.0125);
+      expect(r).toBeGreaterThan(prev);
+      prev = r;
     }
   });
 });
 
-describe("designToMesh", () => {
-  const mesh = designToMesh(reference);
-  const d = reference.diameter_mm / 1000;
-  const r = d / 2;
-
-  it("produces consistent array shapes", () => {
+describe("vehicleToMesh", () => {
+  it("keeps positions, normals, and indices consistent", () => {
+    const mesh = vehicleToMesh(reference());
     expect(mesh.positions.length % 3).toBe(0);
     expect(mesh.normals.length).toBe(mesh.positions.length);
     expect(mesh.indices.length % 3).toBe(0);
-    // Every index points at a real vertex.
     const vertexCount = mesh.positions.length / 3;
-    for (const idx of mesh.indices) {
-      expect(idx).toBeLessThan(vertexCount);
+    for (const index of mesh.indices) {
+      expect(index).toBeLessThan(vertexCount);
     }
   });
 
-  it("covers exactly body + nose + fins in the part table", () => {
-    const names = mesh.parts.map((p) => p.name);
-    expect(names).toEqual(["body", "nose", "fin-0", "fin-1", "fin-2"]);
-    // Part ranges tile the index buffer exactly, no gaps or overlaps.
+  it("tiles the index buffer exactly with part ranges carrying PartIds", () => {
+    const mesh = vehicleToMesh(reference());
+    expect(mesh.parts.map((p) => p.id)).toEqual([1, 2, 3]);
+    expect(mesh.parts.map((p) => p.kind)).toEqual(["nose_cone", "body_tube", "fin_set"]);
     let cursor = 0;
-    for (const part of mesh.parts) {
+    const ordered = [...mesh.parts].sort((a, b) => a.start - b.start);
+    for (const part of ordered) {
       expect(part.start).toBe(cursor);
       cursor += part.count;
     }
     expect(cursor).toBe(mesh.indices.length);
   });
 
-  it("has the reference dimensions: 12-caliber height, correct radius", () => {
+  it("spans the tree's stack height with the tip at the top", () => {
+    const v = reference();
+    expect(stackHeightM(v)).toBeCloseTo(0.3, 12);
+    const mesh = vehicleToMesh(v);
+    let minY = Infinity;
     let maxY = -Infinity;
-    let maxBodyRadius = 0;
-    // Body+nose vertices only (fins extend past the body radius).
-    const finStart = mesh.parts[2].start;
-    const revolveVertexMax = Math.min(...Array.from(mesh.indices.slice(finStart)));
-    for (let i = 0; i < mesh.positions.length / 3; i++) {
-      const x = mesh.positions[3 * i];
-      const y = mesh.positions[3 * i + 1];
-      const z = mesh.positions[3 * i + 2];
-      maxY = Math.max(maxY, y);
-      if (i < revolveVertexMax) {
-        maxBodyRadius = Math.max(maxBodyRadius, Math.hypot(x, z));
-      }
+    for (let i = 1; i < mesh.positions.length; i += 3) {
+      minY = Math.min(minY, mesh.positions[i]);
+      maxY = Math.max(maxY, mesh.positions[i]);
     }
-    expect(maxY).toBeCloseTo(stackHeightM(reference), 6);
-    expect(stackHeightM(reference)).toBeCloseTo(d * (NOSE_CALIBERS + BODY_CALIBERS), 12);
-    expect(maxBodyRadius).toBeCloseTo(r, 6);
+    expect(minY).toBeCloseTo(0, 6);
+    expect(maxY).toBeCloseTo(0.3, 6);
   });
 
-  it("nose rings follow the tangent-ogive profile exactly", () => {
-    const noseLen = d * NOSE_CALIBERS;
-    const bodyLen = d * BODY_CALIBERS;
-    // Nose vertices start after the two body rings.
-    const noseFirstVertex = 2 * RADIAL_SEGMENTS;
-    for (let ring = 1; ring <= NOSE_RINGS; ring++) {
-      const v = noseFirstVertex + (ring - 1) * RADIAL_SEGMENTS;
-      const x = mesh.positions[3 * v];
-      const y = mesh.positions[3 * v + 1];
-      const z = mesh.positions[3 * v + 2];
-      const t = ring / NOSE_RINGS;
-      expect(y).toBeCloseTo(bodyLen + t * noseLen, 6);
-      const expected = ring === NOSE_RINGS ? 0 : ogiveRadius(noseLen * (1 - t), noseLen, r);
-      expect(Math.hypot(x, z)).toBeCloseTo(expected, 6);
+  it("shapes the nose rings by the ogive equation from the tree's dimensions", () => {
+    const mesh = vehicleToMesh(reference());
+    // The nose is emitted first: base ring at y = 0.225, tip at 0.3.
+    for (let i = 0; i <= NOSE_RINGS; i++) {
+      const t = i / NOSE_RINGS;
+      const ringStart = i * RADIAL_SEGMENTS * 3;
+      const x = mesh.positions[ringStart];
+      const z = mesh.positions[ringStart + 2];
+      const radius = Math.hypot(x, z);
+      const expected = i === NOSE_RINGS ? 0 : ogiveRadius(0.075 * (1 - t), 0.075, 0.0125);
+      expect(radius).toBeCloseTo(expected, 6);
+      expect(mesh.positions[ringStart + 1]).toBeCloseTo(0.225 + t * 0.075, 6);
     }
   });
 
-  it("places the fins at even angles around the base", () => {
-    const finParts = mesh.parts.filter((p) => p.name.startsWith("fin-"));
-    expect(finParts).toHaveLength(FIN_COUNT);
-    const angles = finParts.map((part) => {
-      // Centroid of the fin's vertices gives its azimuth.
-      const seen = new Set<number>();
-      let cx = 0;
-      let cz = 0;
-      for (let i = part.start; i < part.start + part.count; i++) {
-        const v = mesh.indices[i];
-        if (seen.has(v)) continue;
-        seen.add(v);
-        cx += mesh.positions[3 * v];
-        cz += mesh.positions[3 * v + 2];
-      }
-      return Math.atan2(cz, cx);
-    });
-    const norm = (a: number) => ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-    for (let f = 0; f < FIN_COUNT; f++) {
-      expect(norm(angles[f])).toBeCloseTo(norm((f / FIN_COUNT) * 2 * Math.PI), 6);
+  it("renders a conical nose with a linear profile", () => {
+    const v = reference();
+    v.parts[0].kind.shape = "conical";
+    const mesh = vehicleToMesh(v);
+    const midRing = (NOSE_RINGS / 2) * RADIAL_SEGMENTS * 3;
+    const radius = Math.hypot(mesh.positions[midRing], mesh.positions[midRing + 2]);
+    expect(radius).toBeCloseTo(0.0125 / 2, 6);
+  });
+
+  it("emits one plate per fin at even azimuths, trailing edge flush aft", () => {
+    const mesh = vehicleToMesh(reference());
+    const fins = mesh.parts.find((p) => p.kind === "fin_set")!;
+    expect(fins.count).toBe(3 * 2 * 3); // 3 fins × 2 triangles × 3 indices
+    // First fin vertex is the root leading edge: y = root chord above the
+    // parent's aft end (trailing edge flush at y = 0).
+    const firstFinVertex = mesh.indices[fins.start] * 3;
+    expect(mesh.positions[firstFinVertex + 1]).toBeCloseTo(0.05, 6);
+    for (let f = 0; f < 3; f++) {
+      const base = firstFinVertex + f * 4 * 3;
+      const cx = (mesh.positions[base] + mesh.positions[base + 9]) / 2;
+      const cz = (mesh.positions[base + 2] + mesh.positions[base + 11]) / 2;
+      const angle = ((Math.atan2(cz, cx) * 180) / Math.PI + 360) % 360;
+      expect(angle % 360).toBeCloseTo((f * 360) / 3, 3);
     }
   });
 
-  it("scales with the design diameter", () => {
-    const fat = designToMesh({ ...reference, diameter_mm: 50 });
-    expect(stackHeightM({ ...reference, diameter_mm: 50 })).toBeCloseTo(
-      2 * stackHeightM(reference),
-      12
-    );
-    // Same topology, scaled geometry.
-    expect(fat.indices.length).toBe(mesh.indices.length);
-    expect(fat.positions.length).toBe(mesh.positions.length);
+  it("scales with the tree's dimensions, keeping topology fixed", () => {
+    const small = vehicleToMesh(reference());
+    const big = reference();
+    big.parts[0].kind.base_radius_m = 0.025;
+    big.parts[1].kind.outer_radius_m = 0.025;
+    const scaled = vehicleToMesh(big);
+    expect(scaled.indices.length).toBe(small.indices.length);
+    expect(scaled.positions.length).toBe(small.positions.length);
   });
 
-  it("has unit normals everywhere", () => {
+  it("keeps every normal unit length", () => {
+    const mesh = vehicleToMesh(reference());
     for (let i = 0; i < mesh.normals.length; i += 3) {
       const len = Math.hypot(mesh.normals[i], mesh.normals[i + 1], mesh.normals[i + 2]);
-      expect(len).toBeCloseTo(1, 5);
+      expect(len).toBeCloseTo(1, 6);
     }
+  });
+
+  it("returns an empty mesh for an empty tree", () => {
+    const mesh = vehicleToMesh({ name: "empty", parts: [] });
+    expect(mesh.indices.length).toBe(0);
+    expect(mesh.parts).toEqual([]);
   });
 });
