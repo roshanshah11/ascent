@@ -84,6 +84,14 @@ Performance rules from the docs: instanced everything; mutate matrices in `useFr
 6. Nothing lands half-done. No placeholders, no "fix later."
 7. Commits end `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 
+## Regenerating orchestrate commands for later releases
+
+v0.4 commands were emitted 2026-07-18 (steps 1–5, in the session that wrote this doc). For v0.5+, run `/plan-orchestrate docs/plan/2026-07-18-v1-roadmap.md --scope=<release steps>` in a fresh session **when that release starts**, not before — commands should reflect the codebase as it exists then. Conventions to keep:
+
+- ECC plugin form with the `ecc:` prefix (`/ecc:orchestrate custom "ecc:tdd-guide,..."`). `rust-reviewer` is NOT installed — use `ecc:code-reviewer`.
+- Every task description names BOTH plan docs (`roadmap` + this file) and starts with "Read both docs first." — orchestrate chains are fresh agents; they only read what the task cites.
+- Paste one command at a time from the repo root; verify the chain's result before the next.
+
 ## Build order (next session starts here)
 
 1. **Step 1 (shell)** — workspace layout + command palette + mission-control styling. No new deps.
