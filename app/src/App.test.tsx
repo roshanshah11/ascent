@@ -10,6 +10,9 @@ const ipc = vi.hoisted(() => ({
   fetchMotors: vi.fn(),
   runSimulation: vi.fn(),
   runSpread: vi.fn(),
+  autosaveProject: vi.fn(() => Promise.resolve()),
+  checkRecovery: vi.fn(() => Promise.resolve(null)),
+  discardRecovery: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("./ipc", () => ipc);
