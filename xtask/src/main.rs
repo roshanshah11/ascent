@@ -2,6 +2,7 @@
 //!
 //! Tasks:
 //! - `test`     full gate: Rust workspace tests + frontend typecheck + vitest
+//! - `metadata` verify every workspace package declares a license
 //! - `audit`    cargo audit (advisory database; requires cargo-audit)
 //! - `vet`      cargo vet (supply-chain review; requires cargo-vet)
 //! - `ci`       everything above, in order — what CI runs
@@ -40,7 +41,25 @@ fn npm(args: &[&str], what: &str) -> Result<(), String> {
     run(cmd, what)
 }
 
+fn task_metadata() -> Result<(), String> {
+    let output = Command::new(env!("CARGO"))
+        .args(["metadata", "--no-deps", "--format-version", "1"])
+        .current_dir(workspace_root())
+        .output()
+        .map_err(|error| format!("cargo metadata: failed to launch: {error}"))?;
+    if !output.status.success() {
+        return Err(format!("cargo metadata: exited with {}", output.status));
+    }
+    let metadata = String::from_utf8(output.stdout)
+        .map_err(|error| format!("cargo metadata emitted non-UTF-8: {error}"))?;
+    if metadata.contains("\"license\":null") {
+        return Err("cargo metadata: a workspace package has no license".into());
+    }
+    Ok(())
+}
+
 fn task_test() -> Result<(), String> {
+    task_metadata()?;
     cargo(&["test", "--workspace"], "cargo test")?;
     npm(&["run", "typecheck"], "frontend typecheck")?;
     npm(&["test"], "vitest")
@@ -58,12 +77,13 @@ fn main() -> std::process::ExitCode {
     let task = std::env::args().nth(1).unwrap_or_default();
     let outcome = match task.as_str() {
         "test" => task_test(),
+        "metadata" => task_metadata(),
         "audit" => task_audit(),
         "vet" => task_vet(),
         "ci" => task_test()
             .and_then(|()| task_audit())
             .and_then(|()| task_vet()),
-        _ => Err("usage: cargo xtask <test|audit|vet|ci>".into()),
+        _ => Err("usage: cargo xtask <test|metadata|audit|vet|ci>".into()),
     };
     match outcome {
         Ok(()) => std::process::ExitCode::SUCCESS,
@@ -71,5 +91,15 @@ fn main() -> std::process::ExitCode {
             eprintln!("xtask: {message}");
             std::process::ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_workspace_package_declares_a_license() {
+        task_metadata().unwrap();
     }
 }
