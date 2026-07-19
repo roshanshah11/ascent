@@ -6,6 +6,7 @@ import EvidenceDrawer from "./components/EvidenceDrawer";
 import FlightMode from "./components/FlightMode";
 import Inspector from "./components/Inspector";
 import JobsPanel from "./components/JobsPanel";
+import LazyPanelBoundary from "./components/LazyPanelBoundary";
 import MotorSelector from "./components/MotorSelector";
 import ResultsWorkspace from "./components/ResultsWorkspace";
 import ReviewPanel from "./components/ReviewPanel";
@@ -346,13 +347,13 @@ export default function App() {
             <section className="design-workspace">
               <div className="viewport-panel">
                 {view3d ? (
-                  <Suspense
-                    fallback={
-                      <div className="viewport-loading">Loading 3D viewport…</div>
-                    }
-                  >
-                    <ViewportR3F vehicle={doc.vehicle} markers={vehicleMarkers} />
-                  </Suspense>
+                  <LazyPanelBoundary message="Unable to load the 3D viewport.">
+                    <Suspense
+                      fallback={<div className="viewport-loading">Loading 3D viewport…</div>}
+                    >
+                      <ViewportR3F vehicle={doc.vehicle} markers={vehicleMarkers} />
+                    </Suspense>
+                  </LazyPanelBoundary>
                 ) : (
                   <Viewport design={design} />
                 )}

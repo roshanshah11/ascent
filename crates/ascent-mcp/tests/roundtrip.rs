@@ -1,8 +1,8 @@
 use ascent_mcp::AscentMcp;
 use rmcp::{
     model::{
-        CallToolRequestParams, ClientInfo, ClientRequest, GetTaskParams, GetTaskPayloadParams,
-        Request, ServerResult, TaskMetadata, TaskStatus, TaskSupport,
+        CallToolRequestParams, CancelTaskParams, ClientInfo, ClientRequest, GetTaskParams,
+        GetTaskPayloadParams, Request, ServerResult, TaskMetadata, TaskStatus, TaskSupport,
     },
     ClientHandler, ServiceExt,
 };
@@ -180,6 +180,58 @@ async fn sdk_task_call_has_a_real_working_to_completed_lifecycle() {
     };
     let studies = payload.get("structuredContent").unwrap_or(&payload)["studies"].clone();
     assert!(studies[0]["results"].is_object());
+
+    client.cancel().await.expect("client closes");
+    server.await.expect("server task joins");
+}
+
+#[tokio::test]
+async fn sdk_task_cancellation_stops_work_before_results_land() {
+    let (client, server) = sdk_pair().await;
+    client
+        .call_tool(
+            CallToolRequestParams::new("apply_proposal").with_arguments(arguments(json!({
+                "lines": ["create-study \"cancel\" native 7 {\"kind\":\"dispersion\",\"flights\":20000}"]
+            }))),
+        )
+        .await
+        .expect("create study");
+
+    let response = client
+        .send_request(ClientRequest::CallToolRequest(Request::new(
+            CallToolRequestParams::new("run_study")
+                .with_arguments(arguments(json!({ "study_id": 1 })))
+                .with_task(TaskMetadata::new()),
+        )))
+        .await
+        .expect("task-augmented tools/call");
+    let ServerResult::CreateTaskResult(created) = response else {
+        panic!("expected task creation response");
+    };
+
+    let response = client
+        .send_request(ClientRequest::CancelTaskRequest(Request::new(
+            CancelTaskParams::new(created.task.task_id),
+        )))
+        .await
+        .expect("tasks/cancel");
+    let cancelled = match response {
+        ServerResult::CancelTaskResult(result) => result.task,
+        // RMCP 2.2 decodes the wire-identical task payload through the
+        // generic task-status result variant on its client side.
+        ServerResult::GetTaskResult(result) => result.task,
+        other => panic!("expected cancellation response, got {other:?}"),
+    };
+    assert_eq!(cancelled.status, TaskStatus::Cancelled);
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let document = client
+        .call_tool(CallToolRequestParams::new("get_document"))
+        .await
+        .expect("get document")
+        .structured_content
+        .expect("structured document");
+    assert!(document["studies"][0]["results"].is_null());
 
     client.cancel().await.expect("client closes");
     server.await.expect("server task joins");

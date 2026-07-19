@@ -200,7 +200,8 @@ textarea:disabled {
 }
 
 .viewport-r3f,
-.viewport-loading {
+.viewport-loading,
+.viewport-error {
   width: 100%;
   min-height: clamp(360px, 58vh, 760px);
   overflow: hidden;
@@ -213,12 +214,17 @@ textarea:disabled {
   display: block;
 }
 
-.viewport-loading {
+.viewport-loading,
+.viewport-error {
   display: grid;
   place-items: center;
   color: var(--ascent-text-dim);
   font-family: var(--ascent-font-mono);
   font-size: 13px;
+}
+
+.viewport-error {
+  color: var(--ascent-danger);
 }
 
 /* ---- Command palette ------------------------------------------------ */
@@ -323,7 +329,8 @@ textarea:disabled {
   }
 
   .viewport-r3f,
-  .viewport-loading {
+  .viewport-loading,
+  .viewport-error {
     min-height: clamp(360px, 58vh, 760px);
   }
 }
