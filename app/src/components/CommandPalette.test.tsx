@@ -3,7 +3,21 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { GrammarCommand } from "../ipc";
 import CommandPalette, { type PaletteAction } from "./CommandPalette";
+
+const grammarCommands: GrammarCommand[] = [
+  {
+    verb: "select-motor",
+    usage: "select-motor <designation>",
+    description: "Select the motor",
+  },
+  {
+    verb: "custom-rust-verb",
+    usage: "custom-rust-verb <value>",
+    description: "Provided by the Rust catalogue",
+  },
+];
 
 describe("CommandPalette", () => {
   let container: HTMLDivElement;
@@ -50,9 +64,15 @@ describe("CommandPalette", () => {
     onClose: () => void;
     actions: PaletteAction[];
     onExec: (line: string) => Promise<void>;
+    grammarCommands?: GrammarCommand[];
   }) => {
     await act(async () => {
-      root.render(<CommandPalette {...props} />);
+      root.render(
+        <CommandPalette
+          {...props}
+          grammarCommands={props.grammarCommands ?? grammarCommands}
+        />,
+      );
       await Promise.resolve();
     });
   };
@@ -72,8 +92,10 @@ describe("CommandPalette", () => {
     });
     const titles = itemTitles();
     expect(titles).toContain("Switch to Design");
-    expect(titles).toContain("add-part");
-    expect(titles.indexOf("Switch to Design")).toBeLessThan(titles.indexOf("add-part")!);
+    expect(titles).toContain("custom-rust-verb");
+    expect(titles.indexOf("Switch to Design")).toBeLessThan(
+      titles.indexOf("custom-rust-verb")!,
+    );
   });
 
   it("filters the list as the query changes", async () => {
@@ -83,8 +105,8 @@ describe("CommandPalette", () => {
       actions: [{ id: "goto-design", title: "Switch to Design", run: vi.fn() }],
       onExec: vi.fn(),
     });
-    await type("add-part");
-    expect(itemTitles()).toEqual(["add-part"]);
+    await type("custom-rust");
+    expect(itemTitles()).toEqual(["custom-rust-verb"]);
   });
 
   it("runs the selected named action on Enter and closes", async () => {
@@ -106,11 +128,11 @@ describe("CommandPalette", () => {
     const onExec = vi.fn();
     const onClose = vi.fn();
     await renderPalette({ open: true, onClose, actions: [], onExec });
-    await type("add-part");
+    await type("custom-rust-verb");
     await keydown("Enter");
     expect(onExec).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
-    expect(input().value).toBe("add-part ");
+    expect(input().value).toBe("custom-rust-verb ");
   });
 
   it("dispatches a full grammar command line through onExec (console_exec path) and closes", async () => {
@@ -174,7 +196,7 @@ describe("CommandPalette", () => {
   it("resets the query and selection each time it reopens", async () => {
     const { rerender } = { rerender: async (open: boolean) => renderPalette({ open, onClose: vi.fn(), actions: [], onExec: vi.fn() }) };
     await rerender(true);
-    await type("add-part");
+    await type("custom-rust-verb");
     await rerender(false);
     await rerender(true);
     expect(input().value).toBe("");

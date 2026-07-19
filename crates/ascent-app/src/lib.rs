@@ -28,7 +28,7 @@ mod propose;
 mod review_ipc;
 mod study;
 
-pub use command::Command;
+pub use command::{command_grammar, Command, CommandGrammarEntry};
 pub use credibility::{Factor, QuantityFlag, Regime, Scorecard};
 pub use document::{Document, DocumentState};
 pub use jobs::{run_study_now, JobEvent, JobId, JobRunner, JobStatus, JobView};
@@ -59,6 +59,12 @@ fn doc_lock<'a>(state: &'a DocState<'_>) -> std::sync::MutexGuard<'a, Document> 
 #[tauri::command]
 fn get_document(state: DocState) -> DocumentState {
     doc_lock(&state).state()
+}
+
+/// Read-only discovery surface for the canonical Rust command grammar.
+#[tauri::command]
+fn command_catalogue() -> Vec<CommandGrammarEntry> {
+    command_grammar().to_vec()
 }
 
 /// Read-only viewport overlay query: CP/CG stations for the current tree
@@ -99,8 +105,12 @@ fn session_journal(state: DocState) -> String {
 /// other client uses. No second mutation path.
 #[tauri::command]
 fn console_exec(state: DocState, line: String) -> Result<DocumentState, String> {
-    let command = Command::parse_text(&line)?;
     let mut doc = doc_lock(&state);
+    console_exec_document(&mut doc, &line)
+}
+
+fn console_exec_document(doc: &mut Document, line: &str) -> Result<DocumentState, String> {
+    let command = Command::parse_text(line)?;
     doc.dispatch(command)?;
     Ok(doc.state())
 }
@@ -246,6 +256,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             reference_design,
             get_document,
+            command_catalogue,
             get_vehicle_markers,
             dispatch_command,
             undo_document,
@@ -273,4 +284,28 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running ascent");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn console_exec_journals_a_canonical_line_and_replays_byte_identically() {
+        let mut document = Document::default();
+        console_exec_document(&mut document, "select-motor B6").unwrap();
+
+        let journal = document.journal_jsonl();
+        let command = journal
+            .lines()
+            .skip(1)
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .find_map(|entry| entry.get("command").cloned())
+            .and_then(|value| serde_json::from_value::<Command>(value).ok())
+            .expect("journal contains the dispatched command");
+        assert_eq!(command.to_text(), "select-motor B6");
+
+        let replayed = Document::replay(&journal).unwrap();
+        assert_eq!(replayed.canonical_bytes(), document.canonical_bytes());
+    }
 }

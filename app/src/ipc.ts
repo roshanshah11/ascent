@@ -16,12 +16,22 @@ import type {
   VehicleMarkers,
 } from "./core/types";
 
+export interface GrammarCommand {
+  verb: string;
+  usage: string;
+  description: string;
+}
+
 export function fetchReferenceDesign(): Promise<Design> {
   return invoke<Design>("reference_design");
 }
 
 export function getDocument(): Promise<DocumentState> {
   return invoke<DocumentState>("get_document");
+}
+
+export function fetchCommandCatalogue(): Promise<GrammarCommand[]> {
+  return invoke<GrammarCommand[]>("command_catalogue");
 }
 
 export function getVehicleMarkers(): Promise<VehicleMarkers> {

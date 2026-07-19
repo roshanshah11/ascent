@@ -8,7 +8,7 @@
 // exactly like typing it into the console. This component never calls a
 // Tauri command directly.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { GRAMMAR_COMMANDS } from "../core/grammarCommands";
+import type { GrammarCommand } from "../ipc";
 import { filterPaletteItems, type PaletteItem } from "../core/paletteMatch";
 
 export interface PaletteAction {
@@ -22,12 +22,19 @@ interface CommandPaletteProps {
   open: boolean;
   onClose: () => void;
   actions: PaletteAction[];
+  grammarCommands: GrammarCommand[];
   onExec: (line: string) => Promise<void>;
 }
 
 type Item = PaletteItem & { run?: () => void };
 
-export default function CommandPalette({ open, onClose, actions, onExec }: CommandPaletteProps) {
+export default function CommandPalette({
+  open,
+  onClose,
+  actions,
+  grammarCommands,
+  onExec,
+}: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +49,7 @@ export default function CommandPalette({ open, onClose, actions, onExec }: Comma
         kind: "action" as const,
         run: a.run,
       })),
-      ...GRAMMAR_COMMANDS.map((g) => ({
+      ...grammarCommands.map((g) => ({
         id: `grammar:${g.verb}`,
         title: g.verb,
         subtitle: g.usage,
@@ -51,7 +58,7 @@ export default function CommandPalette({ open, onClose, actions, onExec }: Comma
         verb: g.verb,
       })),
     ],
-    [actions],
+    [actions, grammarCommands],
   );
 
   // Once the query has a space, the user is past the verb and typing

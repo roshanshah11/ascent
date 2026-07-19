@@ -93,6 +93,82 @@ pub struct Applied {
     pub inverse: Command,
 }
 
+/// One discoverable entry in the canonical text-command grammar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct CommandGrammarEntry {
+    pub verb: &'static str,
+    pub usage: &'static str,
+    pub description: &'static str,
+}
+
+const COMMAND_GRAMMAR: [CommandGrammarEntry; 12] = [
+    CommandGrammarEntry {
+        verb: "add-part",
+        usage: "add-part <parent|-> <kind-json>",
+        description: "Add a part to the vehicle tree",
+    },
+    CommandGrammarEntry {
+        verb: "remove-part",
+        usage: "remove-part <id>",
+        description: "Remove a part by id",
+    },
+    CommandGrammarEntry {
+        verb: "restore-part",
+        usage: "restore-part <parent|-> <index> <part-json>",
+        description: "Restore a removed part subtree at an index",
+    },
+    CommandGrammarEntry {
+        verb: "set-part-param",
+        usage: "set-part-param <id> <param> <value-json>",
+        description: "Set a part parameter",
+    },
+    CommandGrammarEntry {
+        verb: "set-sim-param",
+        usage: "set-sim-param <param> <value-json>",
+        description: "Set a simulation parameter",
+    },
+    CommandGrammarEntry {
+        verb: "select-motor",
+        usage: "select-motor <designation>",
+        description: "Select the motor",
+    },
+    CommandGrammarEntry {
+        verb: "set-design",
+        usage: "set-design <design-json>",
+        description: "Replace the whole design",
+    },
+    CommandGrammarEntry {
+        verb: "create-study",
+        usage: "create-study <\"name\"> <engine> <seed> <kind-json>",
+        description: "Create a study",
+    },
+    CommandGrammarEntry {
+        verb: "delete-study",
+        usage: "delete-study <id>",
+        description: "Delete a study",
+    },
+    CommandGrammarEntry {
+        verb: "restore-study",
+        usage: "restore-study <index> <study-json>",
+        description: "Restore a deleted study at an index",
+    },
+    CommandGrammarEntry {
+        verb: "set-study-param",
+        usage: "set-study-param <id> <param> <value-json>",
+        description: "Set a study parameter",
+    },
+    CommandGrammarEntry {
+        verb: "set-study-results",
+        usage: "set-study-results <id> <results-json|null>",
+        description: "Set or clear a study's results",
+    },
+];
+
+/// The parser-owned command catalogue used by read-only discovery clients.
+pub fn command_grammar() -> &'static [CommandGrammarEntry] {
+    &COMMAND_GRAMMAR
+}
+
 pub fn apply(
     vehicle: &mut Vehicle,
     design: &mut Design,
@@ -742,6 +818,40 @@ mod tests {
             let parsed = Command::parse_text(&text)
                 .unwrap_or_else(|e| panic!("parse failed for '{text}': {e}"));
             assert_eq!(parsed, cmd, "roundtrip mismatch for '{text}'");
+        }
+    }
+
+    #[test]
+    fn command_grammar_has_each_parser_verb_once_with_a_valid_example() {
+        use std::collections::BTreeSet;
+
+        let expected = BTreeSet::from([
+            "add-part",
+            "create-study",
+            "delete-study",
+            "remove-part",
+            "restore-part",
+            "restore-study",
+            "select-motor",
+            "set-design",
+            "set-part-param",
+            "set-sim-param",
+            "set-study-param",
+            "set-study-results",
+        ]);
+        let entries = command_grammar();
+        let actual: BTreeSet<_> = entries.iter().map(|entry| entry.verb).collect();
+
+        assert_eq!(entries.len(), expected.len(), "catalogue contains duplicate verbs");
+        assert_eq!(actual, expected);
+        for entry in entries {
+            let example = every_variant()
+                .into_iter()
+                .map(|command| command.to_text())
+                .find(|line| line.split_whitespace().next() == Some(entry.verb))
+                .unwrap_or_else(|| panic!("missing representative line for {}", entry.verb));
+            Command::parse_text(&example)
+                .unwrap_or_else(|error| panic!("{} failed to parse: {error}", entry.verb));
         }
     }
 

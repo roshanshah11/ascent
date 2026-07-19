@@ -10,6 +10,7 @@ import appSource from "./App.tsx?raw";
 
 const ipc = vi.hoisted(() => ({
   fetchReferenceDesign: vi.fn(),
+  fetchCommandCatalogue: vi.fn(),
   fetchMotors: vi.fn(),
   runSimulation: vi.fn(),
   runSpread: vi.fn(),
@@ -134,9 +135,21 @@ describe("engine comparison UI", () => {
     expect(container.textContent?.includes("Cross-validation")).toBe(visible);
   };
 
-  beforeEach(async () => {
+  beforeEach(async (context) => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     ipc.fetchReferenceDesign.mockResolvedValue(reference);
+    ipc.fetchCommandCatalogue.mockReset();
+    if (context.task.name.includes("catalogue fetch error")) {
+      ipc.fetchCommandCatalogue.mockRejectedValueOnce(new Error("catalogue unavailable"));
+    } else {
+      ipc.fetchCommandCatalogue.mockResolvedValue([
+        {
+          verb: "select-motor",
+          usage: "select-motor <designation>",
+          description: "Select the motor",
+        },
+      ]);
+    }
     ipc.fetchMotors.mockResolvedValue([]);
     ipc.runSimulation.mockReset();
     ipc.runSpread.mockReset();
@@ -273,5 +286,17 @@ describe("engine comparison UI", () => {
   it("keeps the R3F viewport out of the initial App module", () => {
     expect(appSource).not.toMatch(/import\s+ViewportR3F\s+from/);
     expect(appSource).toContain('lazy(() => import("./components/ViewportR3F"))');
+  });
+
+  it("surfaces a catalogue fetch error while named actions remain usable", async () => {
+    expect(container.textContent).toContain("catalogue unavailable");
+
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }),
+      );
+    });
+    expect(container.textContent).toContain("Switch to Design");
+    expect(container.textContent).not.toContain("select-motor <designation>");
   });
 });

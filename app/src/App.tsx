@@ -29,6 +29,7 @@ import {
   consoleExec,
   discardRecovery,
   dispatchCommand,
+  fetchCommandCatalogue,
   fetchMotors,
   fetchReferenceDesign,
   getDocument,
@@ -38,6 +39,7 @@ import {
   runSpread,
   undoDocument,
 } from "./ipc";
+import type { GrammarCommand } from "./ipc";
 
 const ViewportR3F = lazy(() => import("./components/ViewportR3F"));
 
@@ -55,6 +57,7 @@ export default function App() {
   const [view3d, setView3d] = useState(false);
   const [vehicleMarkers, setVehicleMarkers] = useState<VehicleMarkers | null>(null);
   const [motors, setMotors] = useState<MotorInfo[]>([]);
+  const [grammarCommands, setGrammarCommands] = useState<GrammarCommand[]>([]);
   const [record, setRecord] = useState<RunRecord | null>(null);
   const [spread, setSpread] = useState<SpreadResult | null>(null);
   const [status, dispatch] = useReducer(reduceRunStatus, initialRunStatus);
@@ -80,6 +83,7 @@ export default function App() {
 
   useEffect(() => {
     getDocument().then(setDoc).catch((e) => setError(String(e)));
+    fetchCommandCatalogue().then(setGrammarCommands).catch((e) => setError(String(e)));
     fetchMotors().then(setMotors).catch((e) => setError(String(e)));
     // A surviving autosave means the last session crashed — offer a restore.
     checkRecovery().then(setRecovery).catch(() => {});
@@ -389,6 +393,7 @@ export default function App() {
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         actions={paletteActions}
+        grammarCommands={grammarCommands}
         onExec={execFromPalette}
       />
     </div>
