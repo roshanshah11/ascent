@@ -37,6 +37,62 @@
   --ascent-radius: 6px;
 }
 
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  appearance: none;
+  min-height: 30px;
+  padding: var(--ascent-space-1) var(--ascent-space-3);
+  border: 1px solid var(--ascent-border-strong);
+  border-radius: var(--ascent-radius);
+  background: var(--ascent-bg-panel);
+  color: var(--ascent-text);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--ascent-accent);
+  background: var(--ascent-bg-elevated);
+}
+
+input,
+select,
+textarea {
+  border: 1px solid var(--ascent-border-strong);
+  border-radius: var(--ascent-radius);
+  background: var(--ascent-bg-elevated);
+  color: var(--ascent-text);
+  padding: var(--ascent-space-1) var(--ascent-space-2);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--ascent-accent);
+  outline-offset: 2px;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  color: var(--ascent-text-faint);
+  border-color: var(--ascent-border);
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 /* ---- Workbench shell ---------------------------------------------- */
 
 .workbench {
@@ -119,6 +175,52 @@
   overflow: auto;
 }
 
+/* ---- Design workspace --------------------------------------------- */
+
+.design-workspace {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.4fr) minmax(240px, 0.8fr) minmax(220px, 0.7fr);
+  align-items: start;
+  gap: var(--ascent-space-5);
+}
+
+.viewport-panel {
+  min-width: 0;
+  padding: var(--ascent-space-3);
+  overflow: hidden;
+  border: 1px solid var(--ascent-border);
+  border-radius: var(--ascent-radius);
+  background: var(--ascent-bg-panel);
+}
+
+.viewport-panel > svg {
+  display: block;
+  max-width: 100%;
+  margin-inline: auto;
+}
+
+.viewport-r3f,
+.viewport-loading {
+  width: 100%;
+  min-height: clamp(360px, 58vh, 760px);
+  overflow: hidden;
+  border: 1px solid var(--ascent-border-strong);
+  border-radius: var(--ascent-radius);
+  background: radial-gradient(circle at 50% 35%, #1b2430 0%, var(--ascent-bg) 72%);
+}
+
+.viewport-r3f canvas {
+  display: block;
+}
+
+.viewport-loading {
+  display: grid;
+  place-items: center;
+  color: var(--ascent-text-dim);
+  font-family: var(--ascent-font-mono);
+  font-size: 13px;
+}
+
 /* ---- Command palette ------------------------------------------------ */
 
 .command-palette-overlay {
@@ -199,4 +301,29 @@
   color: var(--ascent-text-faint);
   font-family: var(--ascent-font-mono);
   font-size: 13px;
+}
+
+@media (max-width: 960px) {
+  .workbench-header,
+  .workbench-toolbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .workbench-toolbar {
+    margin-left: 0;
+  }
+
+  .workbench-content {
+    padding: var(--ascent-space-3);
+  }
+
+  .design-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .viewport-r3f,
+  .viewport-loading {
+    min-height: clamp(360px, 58vh, 760px);
+  }
 }

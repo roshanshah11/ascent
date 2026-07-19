@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useReducer, useRef, useState } from "react";
 import CommandPalette, { type PaletteAction } from "./components/CommandPalette";
 import Console from "./components/Console";
 import DispersionView from "./components/DispersionView";
@@ -11,7 +11,6 @@ import ResultsWorkspace from "./components/ResultsWorkspace";
 import ReviewPanel from "./components/ReviewPanel";
 import SpreadPanel from "./components/SpreadPanel";
 import Viewport from "./components/Viewport";
-import ViewportR3F from "./components/ViewportR3F";
 import Workbench, { type Workspace } from "./components/Workbench";
 import { diffDesign } from "./core/commandDiff";
 import { initialRunStatus, reduceRunStatus } from "./core/runState";
@@ -39,6 +38,8 @@ import {
   runSpread,
   undoDocument,
 } from "./ipc";
+
+const ViewportR3F = lazy(() => import("./components/ViewportR3F"));
 
 const STATE_BADGE: Record<string, { label: string; color: string }> = {
   current: { label: "Current", color: "#3fb950" },
@@ -338,10 +339,16 @@ export default function App() {
       >
         {mode === "design" ? (
           <>
-            <div style={{ display: "flex", gap: 32 }}>
-              <div>
+            <section className="design-workspace">
+              <div className="viewport-panel">
                 {view3d ? (
-                  <ViewportR3F vehicle={doc.vehicle} markers={vehicleMarkers} />
+                  <Suspense
+                    fallback={
+                      <div className="viewport-loading">Loading 3D viewport…</div>
+                    }
+                  >
+                    <ViewportR3F vehicle={doc.vehicle} markers={vehicleMarkers} />
+                  </Suspense>
                 ) : (
                   <Viewport design={design} />
                 )}
@@ -356,7 +363,7 @@ export default function App() {
               </div>
               <Inspector design={design} onChange={edit} />
               <MotorSelector motors={motors} design={design} onChange={edit} />
-            </div>
+            </section>
             <JobsPanel studies={doc.studies} onDocChange={setDoc} />
             <DispersionView design={design} />
             <Console onDocChange={markEdited} />

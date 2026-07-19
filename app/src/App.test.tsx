@@ -4,6 +4,9 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Design, SpreadResult } from "./core/types";
+// Vite's raw loader supplies the source string during Vitest transformation.
+// @ts-expect-error This project intentionally has no global Vite client types.
+import appSource from "./App.tsx?raw";
 
 const ipc = vi.hoisted(() => ({
   fetchReferenceDesign: vi.fn(),
@@ -30,7 +33,25 @@ vi.mock("./components/ReviewPanel", () => ({ default: () => null }));
 vi.mock("./components/Viewport", () => ({ default: () => null }));
 // R3F needs WebGL; jsdom has none. The viewport's testable logic lives in
 // core/mesh.ts and core/meshGroups.ts.
-vi.mock("./components/ViewportR3F", () => ({ default: () => null }));
+const viewportModule = vi.hoisted(() => {
+  let resolve!: () => void;
+  let loaded = false;
+  const promise = new Promise<void>((done) => {
+    resolve = () => {
+      loaded = true;
+      done();
+    };
+  });
+  return {
+    component: () => {
+      if (!loaded) throw promise;
+      return null;
+    },
+    promise,
+    resolve,
+  };
+});
+vi.mock("./components/ViewportR3F", () => ({ default: viewportModule.component }));
 vi.mock("./components/Inspector", () => ({
   default: ({ design, onChange }: { design: Design; onChange: (next: Design) => void }) => (
     <button onClick={() => onChange({ ...design, cd: design.cd + 0.01 })}>
@@ -235,5 +256,22 @@ describe("engine comparison UI", () => {
     });
     expectComparison(true);
     expect(container.textContent).toContain("Apogee delta: 2.0 m");
+  });
+
+  it("shows a scoped fallback while the 3D viewport loads", async () => {
+    await click("3D");
+
+    const fallback = container.querySelector(".viewport-loading");
+    expect(fallback?.textContent).toBe("Loading 3D viewport…");
+
+    await act(async () => {
+      viewportModule.resolve();
+      await viewportModule.promise;
+    });
+  });
+
+  it("keeps the R3F viewport out of the initial App module", () => {
+    expect(appSource).not.toMatch(/import\s+ViewportR3F\s+from/);
+    expect(appSource).toContain('lazy(() => import("./components/ViewportR3F"))');
   });
 });
