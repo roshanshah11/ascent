@@ -5,6 +5,8 @@ pub enum EventKind {
     Liftoff,
     RailExit,
     Burnout,
+    StageSeparation,
+    StageIgnition,
     Apogee,
     RecoveryDeploy,
     Landing,

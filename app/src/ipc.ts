@@ -13,6 +13,7 @@ import type {
   ReviewReport,
   RunRecord,
   SpreadResult,
+  VehicleMarkers,
 } from "./core/types";
 
 export function fetchReferenceDesign(): Promise<Design> {
@@ -21,6 +22,10 @@ export function fetchReferenceDesign(): Promise<Design> {
 
 export function getDocument(): Promise<DocumentState> {
   return invoke<DocumentState>("get_document");
+}
+
+export function getVehicleMarkers(): Promise<VehicleMarkers> {
+  return invoke<VehicleMarkers>("get_vehicle_markers");
 }
 
 export function dispatchCommand(command: Command): Promise<DocumentState> {

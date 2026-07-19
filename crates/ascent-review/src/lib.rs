@@ -5,6 +5,10 @@
 //! ascent-aero) with the flight configuration (drag, chute, rail — flown by
 //! ascent-sim). The solver never mutates physics: it searches over motor
 //! choice and nose-ballast mass, re-running the same deterministic sim.
+//!
+//! Curated surface: [`ReviewDesign`] / [`ChuteConfig`], [`evaluate`] →
+//! [`Review`], and [`solve`] → [`Repair`] / [`DiffEntry`] (ballast entries
+//! named [`BALLAST_NAME`]) — everything else stays private.
 
 use ascent_aero::{
     stability_calibers_at, stability_pct_of_length_at, FlightQuantities, NoseShape, PointMass,

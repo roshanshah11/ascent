@@ -1,7 +1,8 @@
 [package]
 name = "ascent-app"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+rust-version.workspace = true
 
 [lib]
 name = "ascent_app"

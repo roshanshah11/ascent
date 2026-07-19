@@ -657,6 +657,15 @@ mod tests {
                     mass_g: 4.0,
                 },
             },
+            Command::AddPart {
+                parent: None,
+                kind: PartKind::StageCoupler {
+                    length_m: 0.02,
+                    outer_radius_m: 0.0125,
+                    mass_g: 4.0,
+                    separation_delay_s: 0.5,
+                },
+            },
             Command::RemovePart { id: PartId(3) },
             Command::RestorePart {
                 parent: Some(PartId(2)),

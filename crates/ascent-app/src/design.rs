@@ -102,7 +102,7 @@ pub(crate) fn session_motors() -> Vec<Motor> {
     registry.list().into_iter().cloned().collect()
 }
 
-fn find_motor(designation: &str) -> Result<Motor, String> {
+pub(crate) fn find_motor(designation: &str) -> Result<Motor, String> {
     let registry = lock_registry();
     registry
         .get(designation)

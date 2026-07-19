@@ -49,7 +49,8 @@ const num = (part: VehiclePart, field: string): number => {
 const isStructural = (part: VehiclePart): boolean =>
   part.kind.type === "nose_cone" ||
   part.kind.type === "body_tube" ||
-  part.kind.type === "transition";
+  part.kind.type === "transition" ||
+  part.kind.type === "stage_coupler";
 
 const structuralLength = (part: VehiclePart): number =>
   isStructural(part) ? num(part, "length_m") : 0;
@@ -166,7 +167,7 @@ export function vehicleToMesh(vehicle: Vehicle): RocketMesh {
         prevRing = ring;
       }
       endPart(part, start);
-    } else if (part.kind.type === "body_tube") {
+    } else if (part.kind.type === "body_tube" || part.kind.type === "stage_coupler") {
       const start = beginPart();
       const r = num(part, "outer_radius_m");
       const bottom = pushRing(yAft, r, 0);

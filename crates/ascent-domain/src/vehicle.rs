@@ -47,6 +47,15 @@ pub enum PartKind {
         aft_radius_m: f64,
         mass_g: f64,
     },
+    /// Joins two stages. Everything from the coupler down (aft) is the
+    /// lower stage; the coupler drops with it at separation.
+    StageCoupler {
+        length_m: f64,
+        outer_radius_m: f64,
+        mass_g: f64,
+        /// Delay after the lower stage's burnout before it separates.
+        separation_delay_s: f64,
+    },
     /// Trailing edge sits flush with the parent tube's aft end.
     FinSet {
         count: u32,
@@ -85,6 +94,7 @@ impl PartKind {
             PartKind::NoseCone { mass_g, .. }
             | PartKind::BodyTube { mass_g, .. }
             | PartKind::Transition { mass_g, .. }
+            | PartKind::StageCoupler { mass_g, .. }
             | PartKind::FinSet { mass_g, .. }
             | PartKind::MotorMount { mass_g, .. }
             | PartKind::Parachute { mass_g, .. }
@@ -97,7 +107,10 @@ impl PartKind {
     pub fn is_structural(&self) -> bool {
         matches!(
             self,
-            PartKind::NoseCone { .. } | PartKind::BodyTube { .. } | PartKind::Transition { .. }
+            PartKind::NoseCone { .. }
+                | PartKind::BodyTube { .. }
+                | PartKind::Transition { .. }
+                | PartKind::StageCoupler { .. }
         )
     }
 
@@ -105,7 +118,8 @@ impl PartKind {
         match self {
             PartKind::NoseCone { length_m, .. }
             | PartKind::BodyTube { length_m, .. }
-            | PartKind::Transition { length_m, .. } => *length_m,
+            | PartKind::Transition { length_m, .. }
+            | PartKind::StageCoupler { length_m, .. } => *length_m,
             _ => 0.0,
         }
     }
@@ -152,7 +166,58 @@ impl Vehicle {
             }
             validate_part(part, &mut seen)?;
         }
+        for (i, part) in self.parts.iter().enumerate() {
+            if matches!(part.kind, PartKind::StageCoupler { .. })
+                && (i == 0 || i == self.parts.len() - 1)
+            {
+                return Err(format!(
+                    "stage coupler {} must sit between structural parts, not at the stack end",
+                    part.id.0
+                ));
+            }
+        }
         Ok(())
+    }
+
+    /// Stage segments, nose-first (top stage first; burn order is the
+    /// reverse). A stage begins at each `StageCoupler` — the coupler
+    /// drops with the stage below it. A vehicle with no couplers is one
+    /// stage.
+    pub fn stages(&self) -> Vec<StageInfo> {
+        let mut boundaries = vec![0];
+        for (i, part) in self.parts.iter().enumerate() {
+            if matches!(part.kind, PartKind::StageCoupler { .. }) {
+                boundaries.push(i);
+            }
+        }
+        boundaries.push(self.parts.len());
+        boundaries.dedup();
+
+        boundaries
+            .windows(2)
+            .map(|w| {
+                let (start, end) = (w[0], w[1]);
+                let segment = &self.parts[start..end];
+                let mut dry_mass_g = 0.0;
+                let mut motor_designation = None;
+                for part in segment {
+                    dry_mass_g += subtree_mass_g(part);
+                    find_motor_mount(part, &mut motor_designation);
+                }
+                let separation_delay_s = match &self.parts[start].kind {
+                    PartKind::StageCoupler {
+                        separation_delay_s, ..
+                    } => Some(*separation_delay_s),
+                    _ => None,
+                };
+                StageInfo {
+                    part_range: (start, end),
+                    dry_mass_g,
+                    motor_designation,
+                    separation_delay_s,
+                }
+            })
+            .collect()
     }
 
     /// Mass, CG, and pitch MOI rollup. Approximations per part type are
@@ -188,6 +253,38 @@ impl Vehicle {
             cg_from_nose_m: cg,
             longitudinal_moi_kg_m2: moi,
         }
+    }
+}
+
+/// One stage segment of the root stack, nose-first indices.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StageInfo {
+    /// Root-part indices `[start, end)` of this stage's segment.
+    pub part_range: (usize, usize),
+    /// Dry mass of the segment including all attachments, grams.
+    pub dry_mass_g: f64,
+    /// Designation of the first motor mount found in the segment.
+    pub motor_designation: Option<String>,
+    /// `Some` for stages that begin at a coupler (everything below the
+    /// top stage): delay after this stage's burnout before it drops.
+    pub separation_delay_s: Option<f64>,
+}
+
+fn subtree_mass_g(part: &Part) -> f64 {
+    part.kind.mass_g() + part.children.iter().map(subtree_mass_g).sum::<f64>()
+}
+
+fn find_motor_mount(part: &Part, found: &mut Option<String>) {
+    if found.is_none() {
+        if let PartKind::MotorMount {
+            motor_designation, ..
+        } = &part.kind
+        {
+            *found = Some(motor_designation.clone());
+        }
+    }
+    for child in &part.children {
+        find_motor_mount(child, found);
     }
 }
 
@@ -235,7 +332,9 @@ fn collect_mass_items(
                 mass_kg * length_m * length_m / 12.0,
             ));
         }
-        PartKind::BodyTube { length_m, .. } | PartKind::Transition { length_m, .. } => {
+        PartKind::BodyTube { length_m, .. }
+        | PartKind::Transition { length_m, .. }
+        | PartKind::StageCoupler { length_m, .. } => {
             items.push((
                 mass_kg,
                 parent_fore_m + length_m / 2.0,
@@ -336,6 +435,60 @@ pub fn reference_vehicle() -> Vehicle {
             },
         ],
     }
+}
+
+/// Two-stage variant of the reference vehicle: the Alpha III stack as the
+/// sustainer, a coupler, and a finned D12 booster below it. Drag
+/// separation at booster burnout (zero delay), the Estes gap-staging
+/// pattern.
+pub fn two_stage_reference_vehicle() -> Vehicle {
+    let mut v = reference_vehicle();
+    v.name = "Estes Alpha III · D12 booster".into();
+    v.parts.push(Part {
+        id: PartId(6),
+        kind: PartKind::StageCoupler {
+            length_m: 0.02,
+            outer_radius_m: 0.0125,
+            mass_g: 4.0,
+            separation_delay_s: 0.0,
+        },
+        children: vec![],
+    });
+    v.parts.push(Part {
+        id: PartId(7),
+        kind: PartKind::BodyTube {
+            length_m: 0.09,
+            outer_radius_m: 0.0125,
+            wall_mm: 0.5,
+            mass_g: 12.0,
+        },
+        children: vec![
+            Part {
+                id: PartId(8),
+                kind: PartKind::FinSet {
+                    count: 3,
+                    root_chord_m: 0.06,
+                    tip_chord_m: 0.03,
+                    span_m: 0.045,
+                    sweep_m: 0.0,
+                    thickness_mm: 3.0,
+                    mass_g: 8.0,
+                },
+                children: vec![],
+            },
+            Part {
+                id: PartId(9),
+                kind: PartKind::MotorMount {
+                    motor_designation: "D12".into(),
+                    length_m: 0.07,
+                    position_m: 0.02,
+                    mass_g: 3.0,
+                },
+                children: vec![],
+            },
+        ],
+    });
+    v
 }
 
 #[cfg(test)]
@@ -449,6 +602,67 @@ mod tests {
         let mut v = reference_vehicle();
         v.parts[1].children[0].id = PartId(1);
         assert!(v.validate().unwrap_err().contains("duplicate"));
+    }
+
+    #[test]
+    fn single_stage_vehicle_is_one_stage() {
+        let stages = reference_vehicle().stages();
+        assert_eq!(stages.len(), 1);
+        assert_eq!(stages[0].part_range, (0, 2));
+        assert_eq!(stages[0].dry_mass_g, 34.0);
+        assert_eq!(stages[0].motor_designation.as_deref(), Some("C6"));
+        assert_eq!(stages[0].separation_delay_s, None);
+    }
+
+    #[test]
+    fn two_stage_reference_splits_at_the_coupler() {
+        let v = two_stage_reference_vehicle();
+        v.validate().unwrap();
+        let stages = v.stages();
+        assert_eq!(stages.len(), 2);
+        // Sustainer: the original Alpha III stack.
+        assert_eq!(stages[0].part_range, (0, 2));
+        assert_eq!(stages[0].dry_mass_g, 34.0);
+        assert_eq!(stages[0].motor_designation.as_deref(), Some("C6"));
+        assert_eq!(stages[0].separation_delay_s, None);
+        // Booster: coupler + finned tube + mount = 4 + 12 + 8 + 3 g.
+        assert_eq!(stages[1].part_range, (2, 4));
+        assert_eq!(stages[1].dry_mass_g, 27.0);
+        assert_eq!(stages[1].motor_designation.as_deref(), Some("D12"));
+        assert_eq!(stages[1].separation_delay_s, Some(0.0));
+    }
+
+    #[test]
+    fn two_stage_mass_rollup_includes_booster() {
+        let props = two_stage_reference_vehicle().mass_properties();
+        assert!((props.total_mass_g - 61.0).abs() < 1e-9);
+        // Booster mass sits aft, so the CG moves aft of the single-stage CG.
+        assert!(props.cg_from_nose_m > reference_vehicle().mass_properties().cg_from_nose_m);
+    }
+
+    #[test]
+    fn coupler_at_the_stack_end_is_rejected() {
+        let mut v = reference_vehicle();
+        v.parts.push(Part {
+            id: PartId(20),
+            kind: PartKind::StageCoupler {
+                length_m: 0.02,
+                outer_radius_m: 0.0125,
+                mass_g: 4.0,
+                separation_delay_s: 0.0,
+            },
+            children: vec![],
+        });
+        assert!(v.validate().unwrap_err().contains("coupler"));
+    }
+
+    #[test]
+    fn two_stage_toml_roundtrip_is_byte_identical() {
+        let v = two_stage_reference_vehicle();
+        let first = toml::to_string_pretty(&v).unwrap();
+        let reparsed: Vehicle = toml::from_str(&first).unwrap();
+        assert_eq!(reparsed, v);
+        assert_eq!(toml::to_string_pretty(&reparsed).unwrap(), first);
     }
 
     /// A second structural segment (multi-tube stack) rolls up correctly:

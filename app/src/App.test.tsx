@@ -14,6 +14,7 @@ const ipc = vi.hoisted(() => ({
   checkRecovery: vi.fn(() => Promise.resolve(null)),
   discardRecovery: vi.fn(() => Promise.resolve()),
   getDocument: vi.fn(),
+  getVehicleMarkers: vi.fn(() => Promise.resolve(null)),
   dispatchCommand: vi.fn(),
   undoDocument: vi.fn(),
   redoDocument: vi.fn(),
@@ -27,6 +28,9 @@ vi.mock("./components/FlightMode", () => ({ default: () => null }));
 vi.mock("./components/MotorSelector", () => ({ default: () => null }));
 vi.mock("./components/ReviewPanel", () => ({ default: () => null }));
 vi.mock("./components/Viewport", () => ({ default: () => null }));
+// R3F needs WebGL; jsdom has none. The viewport's testable logic lives in
+// core/mesh.ts and core/meshGroups.ts.
+vi.mock("./components/ViewportR3F", () => ({ default: () => null }));
 vi.mock("./components/Inspector", () => ({
   default: ({ design, onChange }: { design: Design; onChange: (next: Design) => void }) => (
     <button onClick={() => onChange({ ...design, cd: design.cd + 0.01 })}>

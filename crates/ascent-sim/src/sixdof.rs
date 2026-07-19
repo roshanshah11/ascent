@@ -396,6 +396,294 @@ impl SimEngine for SixDofEngine {
     }
 }
 
+/// One burn phase of a staged 6-DOF flight, in burn order. Mirrors
+/// `PlanarStage`: `dry_mass_kg` is what separates with this stage, and
+/// `vehicle` describes the stack configuration this stage flies.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SixDofStage {
+    pub dry_mass_kg: f64,
+    pub motor: Motor,
+    /// Delay after this stage's burnout before separation; the next stage
+    /// ignites at separation. Ignored for the final stage.
+    pub separation_delay_s: f64,
+    pub vehicle: SixDofVehicle,
+    pub drag: Option<crate::rocket::DragModel>,
+}
+
+/// Staged 6-DOF flight with variable-mass handoff: same phase logic as
+/// `run_detailed`, a stage-local motor clock, steps snapped to the exact
+/// separation instant, and `StageSeparation`/`StageIgnition` in the event
+/// timeline. Apogee → descent arms only on the final stage.
+pub fn simulate_sixdof_staged(
+    stages: &[SixDofStage],
+    recovery: Option<crate::rocket::Recovery>,
+    wind: &Wind3DProfile,
+    launch: &SixDofLaunch,
+    env: &Environment,
+    config: &SimConfig,
+) -> Result<SixDofResult, String> {
+    if stages.is_empty() {
+        return Err("at least one stage required".into());
+    }
+    let last = stages.len() - 1;
+    let carried_above = |k: usize| -> f64 {
+        stages[k + 1..]
+            .iter()
+            .map(|s| s.dry_mass_kg + s.motor.mass_at(0.0))
+            .sum::<f64>()
+    };
+    let effective_rocket = |k: usize| -> Rocket {
+        Rocket {
+            name: String::new(),
+            dry_mass_kg: stages[k].dry_mass_kg + carried_above(k),
+            drag: stages[k].drag.clone(),
+            recovery: recovery.clone(),
+        }
+    };
+
+    // Per-stage engines re-run the input validation on each vehicle.
+    let engines: Vec<SixDofEngine> = stages
+        .iter()
+        .map(|s| SixDofEngine::new(s.vehicle.clone(), wind.clone(), launch.clone()))
+        .collect::<Result<_, _>>()?;
+
+    let mut active = 0usize;
+    let mut rocket = effective_rocket(0);
+    validate_run_inputs(&rocket, env, config)?;
+
+    let dt = config.dt_s;
+    let rail_axis = launch_axis(launch);
+    let launch_attitude = launch_quaternion(launch);
+    let mut state = [0.0; STATE_LEN];
+    state[ATTITUDE..ATTITUDE + 4].copy_from_slice(&launch_attitude);
+    let mut t = 0.0;
+    let mut tau = 0.0; // active-stage motor clock
+    let mut burnout_emitted = false;
+    let mut phase = FlightPhase::Pad;
+    let mut history = vec![sample(t, state, phase)];
+    let mut events: Vec<Event> = Vec::new();
+    let mut steps = 0_u64;
+    let mut max_velocity = 0.0_f64;
+    let mut rail_exit_time = None;
+    let mut weathercock_pitch_deg = None;
+
+    while t < config.max_time_s {
+        let motor = &stages[active].motor;
+        let vehicle = &engines[active].vehicle;
+        let burn_time = motor.burn_time();
+
+        if phase == FlightPhase::Pad {
+            let mass_now = rocket.dry_mass_kg + motor.mass_at(tau);
+            let mass_next = rocket.dry_mass_kg + motor.mass_at(tau + dt);
+            let opposing_gravity = env.gravity_ms2 * rail_axis[2];
+            let held = motor.thrust_at(tau) <= mass_now * opposing_gravity
+                && motor.thrust_at(tau + dt) <= mass_next * opposing_gravity;
+            if held {
+                if tau >= burn_time {
+                    break;
+                }
+                t += dt;
+                tau += dt;
+                steps += 1;
+                continue;
+            }
+            events.push(Event {
+                kind: EventKind::Liftoff,
+                t,
+                altitude_m: 0.0,
+                velocity_ms: 0.0,
+            });
+            phase = FlightPhase::Rail;
+        }
+
+        let sep_local = burn_time + stages[active].separation_delay_s;
+        let step = if active < last && tau + dt > sep_local {
+            sep_local - tau
+        } else {
+            dt
+        };
+
+        if step > 1e-12 {
+            let mut next = rk4_step(
+                tau, state, step, phase, &rocket, motor, env, vehicle, wind, rail_axis,
+            )?;
+            normalize_state_quaternion(&mut next)?;
+
+            if phase == FlightPhase::Rail
+                && dot3(vector3(state, POSITION), rail_axis) <= 0.0
+                && dot3(vector3(state, VELOCITY), rail_axis) <= 0.0
+                && tau < burn_time
+            {
+                constrain_rail_state(&mut next, rail_axis, launch_attitude, true);
+            }
+
+            let from_rail_distance = dot3(vector3(state, POSITION), rail_axis);
+            let to_rail_distance = dot3(vector3(next, POSITION), rail_axis);
+            if phase == FlightPhase::Rail && from_rail_distance > 0.0 && to_rail_distance <= 0.0 {
+                let frac = (from_rail_distance / (from_rail_distance - to_rail_distance))
+                    .clamp(0.0, 1.0);
+                state = interpolate_state(state, next, frac)?;
+                constrain_rail_state(&mut state, rail_axis, launch_attitude, true);
+                state[POSITION..POSITION + 3].fill(0.0);
+                state[VELOCITY..VELOCITY + 3].fill(0.0);
+                t += frac * step;
+                tau += frac * step;
+                phase = FlightPhase::Pad;
+                steps += 1;
+                history.push(sample(t, state, phase));
+                continue;
+            }
+            if phase == FlightPhase::Rail
+                && from_rail_distance < env.rail_length_m
+                && to_rail_distance >= env.rail_length_m
+            {
+                let frac = ((env.rail_length_m - from_rail_distance)
+                    / (to_rail_distance - from_rail_distance))
+                    .clamp(0.0, 1.0);
+                let event = interpolated_event(EventKind::RailExit, t, step, state, next, frac);
+                rail_exit_time = Some(event.t);
+                events.push(event);
+                phase = FlightPhase::Ascent;
+            }
+
+            if !burnout_emitted && tau + step >= burn_time - 1e-9 {
+                let frac = if step > 0.0 {
+                    ((burn_time - tau) / step).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                events.push(interpolated_event(
+                    EventKind::Burnout,
+                    t,
+                    step,
+                    state,
+                    next,
+                    frac,
+                ));
+                burnout_emitted = true;
+            }
+
+            if active == last
+                && phase == FlightPhase::Ascent
+                && state[VELOCITY + 2] > 0.0
+                && next[VELOCITY + 2] <= 0.0
+            {
+                let frac = (state[VELOCITY + 2] / (state[VELOCITY + 2] - next[VELOCITY + 2]))
+                    .clamp(0.0, 1.0);
+                let apogee = interpolated_event(EventKind::Apogee, t, step, state, next, frac);
+                events.push(apogee);
+                if rocket.recovery.is_some() {
+                    events.push(Event {
+                        kind: EventKind::RecoveryDeploy,
+                        ..apogee
+                    });
+                }
+                state = interpolate_state(state, next, frac)?;
+                state[VELOCITY + 2] = 0.0;
+                state[ANGULAR_RATE..ANGULAR_RATE + 3].fill(0.0);
+                tau += apogee.t - t;
+                t = apogee.t;
+                phase = FlightPhase::Descent;
+                steps += 1;
+                history.push(sample(t, state, phase));
+                continue;
+            }
+
+            if phase == FlightPhase::Descent
+                && state[POSITION + 2] > 0.0
+                && next[POSITION + 2] <= 0.0
+            {
+                let frac = (state[POSITION + 2] / (state[POSITION + 2] - next[POSITION + 2]))
+                    .clamp(0.0, 1.0);
+                let landing = interpolated_event(EventKind::Landing, t, step, state, next, frac);
+                state = interpolate_state(state, next, frac)?;
+                state[POSITION + 2] = 0.0;
+                t = landing.t;
+                events.push(landing);
+                steps += 1;
+                history.push(sample(t, state, FlightPhase::Grounded));
+                break;
+            }
+
+            state = next;
+            t += step;
+            tau += step;
+            steps += 1;
+            max_velocity = max_velocity.max(norm3(vector3(state, VELOCITY)));
+            history.push(sample(t, state, phase));
+
+            if phase == FlightPhase::Ascent
+                && weathercock_pitch_deg.is_none()
+                && rail_exit_time.is_some_and(|exit| t >= exit + 0.5)
+            {
+                weathercock_pitch_deg = Some(pitch_from_quaternion(vector4(state, ATTITUDE)));
+            }
+        }
+
+        if active < last && tau >= sep_local - 1e-12 {
+            let mark = |kind| Event {
+                kind,
+                t,
+                altitude_m: state[POSITION + 2],
+                velocity_ms: norm3(vector3(state, VELOCITY)),
+            };
+            if !burnout_emitted {
+                events.push(mark(EventKind::Burnout));
+            }
+            events.push(mark(EventKind::StageSeparation));
+            active += 1;
+            rocket = effective_rocket(active);
+            tau = 0.0;
+            burnout_emitted = false;
+            events.push(mark(EventKind::StageIgnition));
+            if phase == FlightPhase::Rail {
+                phase = FlightPhase::Ascent;
+            }
+        }
+    }
+
+    let event = |kind| events.iter().find(|event| event.kind == kind).copied();
+    let apogee = event(EventKind::Apogee);
+    let burnout = event(EventKind::Burnout);
+    let rail_exit = event(EventKind::RailExit);
+    let landing = event(EventKind::Landing);
+    let final_motor = &stages[last].motor;
+    let sim_result = SimResult {
+        samples: Vec::new(),
+        events,
+        apogee_m: apogee.map_or(state[POSITION + 2], |event| event.altitude_m),
+        apogee_time_s: apogee.map_or(t, |event| event.t),
+        burnout_time_s: burnout.map_or(final_motor.burn_time(), |event| event.t),
+        burnout_velocity_ms: burnout.map_or(0.0, |event| event.velocity_ms),
+        burnout_altitude_m: burnout.map_or(0.0, |event| event.altitude_m),
+        max_velocity_ms: max_velocity,
+        rail_exit_velocity_ms: rail_exit.map_or(f64::NAN, |event| event.velocity_ms),
+        landing_time_s: landing.map_or(f64::NAN, |event| event.t),
+        landing_velocity_ms: landing.map_or(f64::NAN, |event| event.velocity_ms),
+        steps,
+    };
+    let mut summary = SimSummary::from_result(&sim_result, &rocket, final_motor, env, config);
+    // Hash the full staged input set, not just the final configuration.
+    let canonical = serde_json::json!({
+        "stages": stages,
+        "recovery": recovery,
+        "environment": env,
+        "config": config,
+        "wind": wind,
+        "launch": launch,
+    });
+    let mut hasher = Sha256::new();
+    hasher.update(serde_json::to_vec(&canonical).expect("staged six-DOF inputs serialize"));
+    summary.input_hash = format!("{:x}", hasher.finalize());
+
+    Ok(SixDofResult {
+        summary,
+        history,
+        landing_position_m: vector3(state, POSITION),
+        weathercock_pitch_deg: weathercock_pitch_deg.unwrap_or(0.0),
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn derivative(
     t: f64,

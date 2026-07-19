@@ -195,6 +195,31 @@ fn runnable(study: &Study) -> Result<(), String> {
 /// The standard dispersion variation set for study jobs. Fixed by
 /// convention for now — it is part of the hashed study config the moment
 /// StudyKind grows per-study variations.
+/// Synchronous study run for single-threaded clients (CLI, MCP): the same
+/// snapshot → dispersion → `SetStudyResults` landing as the background
+/// worker, without the queue. Deterministic: same document, same bytes.
+pub fn run_study_now(doc: &mut Document, study_id: StudyId) -> Result<(), String> {
+    let study = doc
+        .studies
+        .iter()
+        .find(|s| s.id == study_id)
+        .ok_or_else(|| format!("no study {}", study_id.0))?
+        .clone();
+    runnable(&study)?;
+    let input_hash = study_input_hash(&doc.vehicle, &doc.design, &study);
+    let StudyKind::Dispersion { flights } = study.kind else {
+        return Err("study kind is not runnable yet".into());
+    };
+    let request = dispersion_request(study.seed, flights);
+    let summary = dispersion_ipc::run_observed(&doc.vehicle, &doc.design, &request, |_, _| true)?
+        .ok_or("run cancelled")?;
+    let data = serde_json::to_value(&summary).map_err(|e| format!("summary serialize: {e}"))?;
+    doc.dispatch(Command::SetStudyResults {
+        id: study_id,
+        results: Some(StudyResults { input_hash, data }),
+    })
+}
+
 fn dispersion_request(seed: u64, flights: u32) -> DispersionRequest {
     DispersionRequest {
         seed,

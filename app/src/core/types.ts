@@ -58,6 +58,17 @@ export interface DocumentState {
   can_redo: boolean;
 }
 
+/** Mirrors crates/ascent-app/src/markers.rs — stations in meters from the nose tip. */
+export interface VehicleMarkers {
+  cp_from_nose_m: number;
+  cg_ignition_from_nose_m: number;
+  cg_burnout_from_nose_m: number;
+  length_m: number;
+  diameter_m: number;
+  stability_ignition_cal: number;
+  stability_burnout_cal: number;
+}
+
 /** Payloads of the "job-progress" / "job-done" Tauri events. */
 export interface JobProgressEvent {
   event: "progress";

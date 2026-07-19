@@ -1,0 +1,202 @@
+/* Ascent mission-control theme (v0.4 Step 10). Typography-first, dark,
+   CSS custom properties only — no component framework. This file styles
+   the workbench shell (header/tabs/content grid) and the command palette;
+   existing panels keep their inline styles until the dedicated visual
+   design pass (roadmap v0.5+) replaces the skin. */
+
+:root {
+  /* Surfaces, darkest to most elevated. */
+  --ascent-bg: #0a0d12;
+  --ascent-bg-elevated: #11151c;
+  --ascent-bg-panel: #161b23;
+  --ascent-border: #262d38;
+  --ascent-border-strong: #384252;
+
+  /* Text. */
+  --ascent-text: #e6e8eb;
+  --ascent-text-dim: #9aa1ab;
+  --ascent-text-faint: #5b6472;
+
+  /* Accent + status, reused from the existing state badge palette. */
+  --ascent-accent: #58a6ff;
+  --ascent-ok: #3fb950;
+  --ascent-warn: #e8a33d;
+  --ascent-danger: #c74b3c;
+
+  /* Type. */
+  --ascent-font-sans: system-ui, sans-serif;
+  --ascent-font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Spacing scale. */
+  --ascent-space-1: 4px;
+  --ascent-space-2: 8px;
+  --ascent-space-3: 12px;
+  --ascent-space-4: 16px;
+  --ascent-space-5: 24px;
+
+  --ascent-radius: 6px;
+}
+
+/* ---- Workbench shell ---------------------------------------------- */
+
+.workbench {
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  min-height: 100vh;
+  background: var(--ascent-bg);
+  color: var(--ascent-text);
+  font-family: var(--ascent-font-sans);
+}
+
+.workbench-header {
+  display: flex;
+  align-items: center;
+  gap: var(--ascent-space-4);
+  padding: var(--ascent-space-3) var(--ascent-space-5);
+  background: var(--ascent-bg-elevated);
+  border-bottom: 1px solid var(--ascent-border);
+}
+
+.workbench-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ascent-text);
+}
+
+.workbench-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--ascent-space-2);
+  margin-left: auto;
+}
+
+.workbench-tabs {
+  display: flex;
+  gap: var(--ascent-space-1);
+  padding: 0 var(--ascent-space-5);
+  background: var(--ascent-bg-elevated);
+  border-bottom: 1px solid var(--ascent-border);
+}
+
+.workbench-tab {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--ascent-text-dim);
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  padding: var(--ascent-space-3) var(--ascent-space-2);
+  cursor: pointer;
+}
+
+.workbench-tab:hover:not(:disabled) {
+  color: var(--ascent-text);
+}
+
+.workbench-tab.active {
+  color: var(--ascent-accent);
+  border-bottom-color: var(--ascent-accent);
+}
+
+.workbench-tab:disabled {
+  color: var(--ascent-text-faint);
+  cursor: not-allowed;
+}
+
+.workbench-banner {
+  padding: var(--ascent-space-2) var(--ascent-space-5);
+  background: var(--ascent-bg-panel);
+  border-bottom: 1px solid var(--ascent-border);
+}
+
+.workbench-content {
+  padding: var(--ascent-space-5);
+  overflow: auto;
+}
+
+/* ---- Command palette ------------------------------------------------ */
+
+.command-palette-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 13, 18, 0.6);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  z-index: 1000;
+}
+
+.command-palette {
+  width: min(560px, 90vw);
+  background: var(--ascent-bg-panel);
+  border: 1px solid var(--ascent-border-strong);
+  border-radius: var(--ascent-radius);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.command-palette-input {
+  width: 100%;
+  padding: var(--ascent-space-3) var(--ascent-space-4);
+  background: var(--ascent-bg-elevated);
+  border: none;
+  border-bottom: 1px solid var(--ascent-border);
+  color: var(--ascent-text);
+  font-family: var(--ascent-font-mono);
+  font-size: 14px;
+  outline: none;
+}
+
+.command-palette-error {
+  padding: var(--ascent-space-2) var(--ascent-space-4);
+  color: var(--ascent-danger);
+  font-family: var(--ascent-font-mono);
+  font-size: 12px;
+  border-bottom: 1px solid var(--ascent-border);
+}
+
+.command-palette-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--ascent-space-1) 0;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.command-palette-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ascent-space-3);
+  padding: var(--ascent-space-2) var(--ascent-space-4);
+  cursor: pointer;
+  font-family: var(--ascent-font-mono);
+  font-size: 13px;
+  color: var(--ascent-text-dim);
+}
+
+.command-palette-item.selected {
+  background: var(--ascent-bg-elevated);
+  color: var(--ascent-text);
+}
+
+.command-palette-item-title {
+  color: inherit;
+}
+
+.command-palette-item-subtitle {
+  color: var(--ascent-text-faint);
+  font-size: 11px;
+}
+
+.command-palette-empty {
+  padding: var(--ascent-space-3) var(--ascent-space-4);
+  color: var(--ascent-text-faint);
+  font-family: var(--ascent-font-mono);
+  font-size: 13px;
+}

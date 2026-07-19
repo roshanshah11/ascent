@@ -94,6 +94,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ascent-mcp"
+version = "0.0.0"
+dependencies = [
+ "ascent-app",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ascent-review"
 version = "0.1.0"
 dependencies = [
@@ -4359,6 +4368,10 @@ dependencies = [
  "once_cell",
  "pkg-config",
 ]
+
+[[package]]
+name = "xtask"
+version = "0.0.0"
 
 [[package]]
 name = "yoke"

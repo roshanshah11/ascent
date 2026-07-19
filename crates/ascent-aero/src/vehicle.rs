@@ -154,6 +154,19 @@ impl Vehicle {
                     body_diameter = body_diameter.max(2.0 * aft_radius_m);
                     *length_m
                 }
+                PartKind::StageCoupler {
+                    length_m,
+                    outer_radius_m,
+                    mass_g,
+                    ..
+                } => {
+                    // Constant-radius section: no Barrowman CN contribution,
+                    // but its length and mass are part of the airframe.
+                    body_length += length_m;
+                    body_mass += mass_g / 1000.0;
+                    body_diameter = body_diameter.max(2.0 * outer_radius_m);
+                    *length_m
+                }
                 _ => 0.0,
             };
             for child in &part.children {

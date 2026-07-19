@@ -57,7 +57,7 @@ function Plot({
 export default function FlightMode({ record }: { record: RunRecord }) {
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const raf = useRef<number>();
+  const raf = useRef<number | undefined>(undefined);
   const duration = flightDuration(record);
 
   useEffect(() => {

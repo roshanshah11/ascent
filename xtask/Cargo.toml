@@ -1,0 +1,12 @@
+# Workspace automation as code (`cargo xtask <task>`), per the
+# large-workspace rules: no Makefiles, no shell scripts that drift —
+# std-only Rust that runs the same everywhere. Not published, no deps.
+[package]
+name = "xtask"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]

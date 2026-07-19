@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from "react";
+import CommandPalette, { type PaletteAction } from "./components/CommandPalette";
 import Console from "./components/Console";
 import DispersionView from "./components/DispersionView";
 import EvidenceDrawer from "./components/EvidenceDrawer";
@@ -10,7 +11,8 @@ import ResultsWorkspace from "./components/ResultsWorkspace";
 import ReviewPanel from "./components/ReviewPanel";
 import SpreadPanel from "./components/SpreadPanel";
 import Viewport from "./components/Viewport";
-import Viewport3D from "./components/Viewport3D";
+import ViewportR3F from "./components/ViewportR3F";
+import Workbench, { type Workspace } from "./components/Workbench";
 import { diffDesign } from "./core/commandDiff";
 import { initialRunStatus, reduceRunStatus } from "./core/runState";
 import type {
@@ -20,15 +22,18 @@ import type {
   Project,
   RunRecord,
   SpreadResult,
+  VehicleMarkers,
 } from "./core/types";
 import {
   autosaveProject,
   checkRecovery,
+  consoleExec,
   discardRecovery,
   dispatchCommand,
   fetchMotors,
   fetchReferenceDesign,
   getDocument,
+  getVehicleMarkers,
   redoDocument,
   runSimulation,
   runSpread,
@@ -47,12 +52,14 @@ export default function App() {
   // snapshots and send commands. No design mutation happens client-side.
   const [doc, setDoc] = useState<DocumentState | null>(null);
   const [view3d, setView3d] = useState(false);
+  const [vehicleMarkers, setVehicleMarkers] = useState<VehicleMarkers | null>(null);
   const [motors, setMotors] = useState<MotorInfo[]>([]);
   const [record, setRecord] = useState<RunRecord | null>(null);
   const [spread, setSpread] = useState<SpreadResult | null>(null);
   const [status, dispatch] = useReducer(reduceRunStatus, initialRunStatus);
-  const [mode, setMode] = useState<"design" | "flight" | "results" | "review">("design");
+  const [mode, setMode] = useState<Workspace>("design");
   const [error, setError] = useState<string | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   // Every design mutation and comparison request advances this generation.
   // A completion may render only while it still describes the current design.
   const comparisonGeneration = useRef(0);
@@ -77,6 +84,19 @@ export default function App() {
     checkRecovery().then(setRecovery).catch(() => {});
   }, []);
 
+  // Keyboard-first command palette: Cmd+K / Ctrl+K opens from anywhere,
+  // not just while the workbench root has focus (unlike Undo/Redo below).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   // MS-Office style autosave: every 30 s, if there are unsaved edits, write
   // the crash-recovery file. Never touches the user's own project file.
   useEffect(() => {
@@ -93,6 +113,24 @@ export default function App() {
     }, 30_000);
     return () => clearInterval(timer);
   }, []);
+
+  // CP/CG overlay data: re-query whenever the document snapshot changes.
+  // Read-only — a failed derivation (mid-edit invalid tree) just hides the
+  // markers rather than surfacing an error.
+  useEffect(() => {
+    if (!doc) return;
+    let cancelled = false;
+    getVehicleMarkers()
+      .then((m) => {
+        if (!cancelled) setVehicleMarkers(m);
+      })
+      .catch(() => {
+        if (!cancelled) setVehicleMarkers(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [doc]);
 
   if (!doc) {
     return <div style={{ padding: 24 }}>{error ?? "Loading document…"}</div>;
@@ -142,7 +180,7 @@ export default function App() {
       const result = await runSimulation(design);
       setRecord(result);
       dispatch({ type: "RUN_SUCCESS" });
-      setMode("flight");
+      setMode("simulate");
     } catch (e) {
       setError(String(e));
       dispatch({ type: "RUN_FAIL" });
@@ -197,6 +235,30 @@ export default function App() {
     discardRecovery().catch(() => {});
   };
 
+  // Palette grammar dispatch: the one text-command mutation path, same as
+  // the console — `console_exec` re-parses and re-validates in Rust.
+  const execFromPalette = async (line: string) => {
+    const next = await consoleExec(line);
+    markEdited(next);
+  };
+
+  const paletteActions: PaletteAction[] = [
+    { id: "goto-design", title: "Switch to Design", keywords: "workspace tab", run: () => setMode("design") },
+    {
+      id: "goto-simulate",
+      title: "Switch to Simulate",
+      keywords: "workspace tab flight",
+      run: () => record && setMode("simulate"),
+    },
+    { id: "goto-results", title: "Switch to Results", keywords: "workspace tab", run: () => setMode("results") },
+    { id: "goto-review", title: "Switch to Review", keywords: "workspace tab flight review", run: () => setMode("review") },
+    { id: "run-simulation", title: "Run simulation", run: () => void run() },
+    { id: "compare-engines", title: "Compare engines", keywords: "rocketpy cross-validation", run: () => void compare() },
+    { id: "reset-demo", title: "Reset demo", keywords: "restore reference design", run: () => void reset() },
+    ...(doc.can_undo ? [{ id: "undo", title: "Undo", run: () => void doUndo() }] : []),
+    ...(doc.can_redo ? [{ id: "redo", title: "Redo", run: () => void doRedo() }] : []),
+  ];
+
   const badge = STATE_BADGE[status.state];
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -206,53 +268,40 @@ export default function App() {
     else void doUndo();
   };
 
-  return (
-    <div style={{ padding: 20 }} tabIndex={-1} onKeyDown={onKeyDown}>
-      <header style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
-        <h2 style={{ margin: 0 }}>Ascent</h2>
-        <span
-          style={{
-            border: `1px solid ${badge.color}`,
-            color: badge.color,
-            borderRadius: 12,
-            padding: "2px 10px",
-            fontSize: 12,
-          }}
-        >
-          {badge.label}
-        </span>
-        <button onClick={run} disabled={status.state === "running"}>
-          Run simulation
-        </button>
-        <button onClick={compare}>Compare engines</button>
-        <button onClick={reset} title="Restore the reference design and clear results">
-          Reset demo
-        </button>
-        <button onClick={doUndo} disabled={!doc.can_undo} title="Undo (⌘Z)">
-          Undo
-        </button>
-        <button onClick={doRedo} disabled={!doc.can_redo} title="Redo (⇧⌘Z)">
-          Redo
-        </button>
-        <nav style={{ marginLeft: "auto" }}>
-          <button onClick={() => setMode("design")} disabled={mode === "design"}>
-            Design
-          </button>
-          <button
-            onClick={() => setMode("flight")}
-            disabled={mode === "flight" || !record}
-          >
-            Flight
-          </button>
-          <button onClick={() => setMode("results")} disabled={mode === "results"}>
-            Results
-          </button>
-          <button onClick={() => setMode("review")} disabled={mode === "review"}>
-            Flight Review
-          </button>
-        </nav>
-      </header>
+  const toolbar = (
+    <>
+      <span
+        style={{
+          border: `1px solid ${badge.color}`,
+          color: badge.color,
+          borderRadius: 12,
+          padding: "2px 10px",
+          fontSize: 12,
+        }}
+      >
+        {badge.label}
+      </span>
+      <button onClick={run} disabled={status.state === "running"}>
+        Run simulation
+      </button>
+      <button onClick={compare}>Compare engines</button>
+      <button onClick={reset} title="Restore the reference design and clear results">
+        Reset demo
+      </button>
+      <button onClick={doUndo} disabled={!doc.can_undo} title="Undo (⌘Z)">
+        Undo
+      </button>
+      <button onClick={doRedo} disabled={!doc.can_redo} title="Redo (⇧⌘Z)">
+        Redo
+      </button>
+      <button onClick={() => setPaletteOpen(true)} title="Command palette (⌘K)">
+        ⌘K
+      </button>
+    </>
+  );
 
+  const banner = (
+    <>
       {recovery && (
         <div
           style={{
@@ -273,46 +322,68 @@ export default function App() {
           <button onClick={dismissRecovery}>Discard</button>
         </div>
       )}
+      {error && <div style={{ color: "#c74b3c" }}>{error}</div>}
+    </>
+  );
 
-      {error && <div style={{ color: "#c74b3c", marginBottom: 12 }}>{error}</div>}
-
-      {mode === "design" ? (
-        <>
-          <div style={{ display: "flex", gap: 32 }}>
-            <div>
-              {view3d ? <Viewport3D vehicle={doc.vehicle} /> : <Viewport design={design} />}
-              <div style={{ marginTop: 4 }}>
-                <button onClick={() => setView3d(false)} disabled={!view3d}>
-                  2D
-                </button>
-                <button onClick={() => setView3d(true)} disabled={view3d}>
-                  3D
-                </button>
+  return (
+    <div tabIndex={-1} onKeyDown={onKeyDown}>
+      <Workbench
+        workspace={mode}
+        onWorkspaceChange={setMode}
+        disabledWorkspaces={record ? [] : ["simulate"]}
+        title="Ascent"
+        toolbar={toolbar}
+        banner={recovery || error ? banner : undefined}
+      >
+        {mode === "design" ? (
+          <>
+            <div style={{ display: "flex", gap: 32 }}>
+              <div>
+                {view3d ? (
+                  <ViewportR3F vehicle={doc.vehicle} markers={vehicleMarkers} />
+                ) : (
+                  <Viewport design={design} />
+                )}
+                <div style={{ marginTop: 4 }}>
+                  <button onClick={() => setView3d(false)} disabled={!view3d}>
+                    2D
+                  </button>
+                  <button onClick={() => setView3d(true)} disabled={view3d}>
+                    3D
+                  </button>
+                </div>
               </div>
+              <Inspector design={design} onChange={edit} />
+              <MotorSelector motors={motors} design={design} onChange={edit} />
             </div>
-            <Inspector design={design} onChange={edit} />
-            <MotorSelector motors={motors} design={design} onChange={edit} />
-          </div>
-          <JobsPanel studies={doc.studies} onDocChange={setDoc} />
-          <DispersionView design={design} />
-          <Console onDocChange={markEdited} />
-        </>
-      ) : mode === "flight" ? (
-        record && <FlightMode record={record} />
-      ) : mode === "results" ? (
-        <ResultsWorkspace studies={doc.studies} record={record} />
-      ) : (
-        <ReviewPanel />
-      )}
+            <JobsPanel studies={doc.studies} onDocChange={setDoc} />
+            <DispersionView design={design} />
+            <Console onDocChange={markEdited} />
+          </>
+        ) : mode === "simulate" ? (
+          record && <FlightMode record={record} />
+        ) : mode === "results" ? (
+          <ResultsWorkspace studies={doc.studies} record={record} />
+        ) : (
+          <ReviewPanel />
+        )}
 
-      {spread && <SpreadPanel spread={spread} />}
+        {spread && <SpreadPanel spread={spread} />}
 
-      {record && (
-        <footer style={{ marginTop: 20, fontSize: 11, color: "#9aa1ab" }}>
-          run {record.summary.input_hash.slice(0, 12)} · deterministic · offline
-          <EvidenceDrawer design={record.design} />
-        </footer>
-      )}
+        {record && (
+          <footer style={{ marginTop: 20, fontSize: 11, color: "#9aa1ab" }}>
+            run {record.summary.input_hash.slice(0, 12)} · deterministic · offline
+            <EvidenceDrawer design={record.design} />
+          </footer>
+        )}
+      </Workbench>
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        actions={paletteActions}
+        onExec={execFromPalette}
+      />
     </div>
   );
 }

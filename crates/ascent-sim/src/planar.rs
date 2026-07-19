@@ -381,6 +381,263 @@ pub fn simulate_planar(
     }
 }
 
+/// One burn phase of a staged flight, in burn order (index 0 ignites
+/// first). `dry_mass_kg` is what this stage drops at separation — the
+/// structure and spent motor case leave together, so the case mass is
+/// accounted for by the motor's own post-burnout `mass_at`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanarStage {
+    /// Structure mass that leaves with this stage at separation, kg
+    /// (motor case mass rides on the motor's mass curve).
+    pub dry_mass_kg: f64,
+    pub motor: Motor,
+    /// Delay after this stage's burnout before it separates (the next
+    /// stage ignites at separation). Ignored for the final stage.
+    pub separation_delay_s: f64,
+    /// Rigid-body/aero numbers for the stack configuration this stage
+    /// flies: full stack for the booster, remaining stack afterwards.
+    pub vehicle: PlanarVehicle,
+    pub drag: Option<DragModel>,
+}
+
+use crate::rocket::DragModel;
+use crate::summary::EventSummary;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanarStagedResult {
+    pub summary: PlanarSummary,
+    pub events: Vec<EventSummary>,
+}
+
+/// Staged planar flight: each stage burns, coasts through its separation
+/// delay, drops its mass, and hands off to the next stage, which ignites
+/// at separation (gap staging). The single-stage case reproduces
+/// `simulate_planar` to 1e-9 (tested) — same stepping, same phase logic.
+/// Modeling choice: apogee → descent only arms on the final stage; a
+/// booster coasting past vertical still separates and ignites the next
+/// stage (the lawn-dart case reports itself via the trajectory).
+pub fn simulate_planar_staged(
+    stages: &[PlanarStage],
+    recovery: Option<crate::rocket::Recovery>,
+    env: &Environment,
+    wind: &WindProfile,
+    config: &SimConfig,
+) -> PlanarStagedResult {
+    assert!(!stages.is_empty(), "at least one stage required");
+    let dt = config.dt_s;
+    let last = stages.len() - 1;
+
+    // Mass carried above stage k: upper structures plus their unlit
+    // motors at full mass.
+    let carried_above = |k: usize| -> f64 {
+        stages[k + 1..]
+            .iter()
+            .map(|s| s.dry_mass_kg + s.motor.mass_at(0.0))
+            .sum::<f64>()
+    };
+    let effective_rocket = |k: usize| -> Rocket {
+        Rocket {
+            name: String::new(),
+            dry_mass_kg: stages[k].dry_mass_kg + carried_above(k),
+            drag: stages[k].drag.clone(),
+            recovery: recovery.clone(),
+        }
+    };
+
+    let mut active = 0usize;
+    let mut rocket = effective_rocket(0);
+    let mut burnout_emitted = false;
+
+    let mut t_abs = 0.0; // absolute flight time
+    let mut tau = 0.0; // time since active-stage ignition (motor clock)
+    let mut s: State = [0.0; 6];
+    s[4] = stages[0].vehicle.launch_angle_rad;
+    let mut phase = Phase::Pad;
+    let mut steps: u64 = 0;
+    let mut max_velocity: f64 = 0.0;
+    let mut max_aoa_rad: f64 = 0.0;
+    let mut weathercock_rad = f64::NAN;
+    let mut rail_exit_t = f64::NAN;
+    let mut apogee = (f64::NAN, f64::NAN);
+    let mut landing = (f64::NAN, f64::NAN);
+    let mut events: Vec<EventSummary> = Vec::new();
+
+    let event = |kind: &str, t: f64, s: &State| EventSummary {
+        kind: kind.into(),
+        t_s: t,
+        altitude_m: s[1],
+        velocity_ms: (s[2] * s[2] + s[3] * s[3]).sqrt(),
+    };
+
+    while t_abs < config.max_time_s {
+        let motor = &stages[active].motor;
+        let vehicle = &stages[active].vehicle;
+        let burn_time = motor.burn_time();
+
+        if phase == Phase::Pad {
+            let weight_now = (rocket.dry_mass_kg + motor.mass_at(tau)) * env.gravity_ms2;
+            let weight_next = (rocket.dry_mass_kg + motor.mass_at(tau + dt)) * env.gravity_ms2;
+            let held =
+                motor.thrust_at(tau) <= weight_now && motor.thrust_at(tau + dt) <= weight_next;
+            if held {
+                if tau >= burn_time {
+                    break; // Motor never lifts this rocket.
+                }
+                t_abs += dt;
+                tau += dt;
+                steps += 1;
+                continue;
+            }
+            phase = Phase::Rail;
+            events.push(event("Liftoff", t_abs, &s));
+        }
+
+        // Non-final stages integrate to the exact separation instant.
+        let sep_local = burn_time + stages[active].separation_delay_s;
+        let step = if active < last && tau + dt > sep_local {
+            sep_local - tau
+        } else {
+            dt
+        };
+
+        if step > 1e-12 {
+            let mut next = rk4_step(tau, s, step, phase, &rocket, motor, env, vehicle, wind);
+            if phase == Phase::Rail && s[1] <= 0.0 && s[3] <= 0.0 && tau < burn_time {
+                next[1] = next[1].max(0.0);
+                next[3] = next[3].max(0.0);
+            }
+
+            if phase == Phase::Rail && next[1] >= env.rail_length_m {
+                phase = Phase::Ascent;
+                rail_exit_t = t_abs + step;
+                events.push(event("RailExit", rail_exit_t, &next));
+            }
+
+            if phase == Phase::Ascent {
+                let wind_x = wind.wind_x_at(next[1]);
+                let (rvx, rvz) = (next[2] - wind_x, next[3]);
+                let (sin_t, cos_t) = next[4].sin_cos();
+                let axial = rvx * sin_t + rvz * cos_t;
+                if axial > 1e-3 {
+                    let crossflow = rvx * cos_t - rvz * sin_t;
+                    let alpha = (-crossflow).atan2(axial);
+                    if alpha.abs() > max_aoa_rad.abs() {
+                        max_aoa_rad = alpha;
+                    }
+                }
+                if weathercock_rad.is_nan()
+                    && !rail_exit_t.is_nan()
+                    && t_abs + step >= rail_exit_t + 0.5
+                {
+                    weathercock_rad = next[4];
+                }
+            }
+
+            // Burnout of the active stage (event only; thrust already 0).
+            // The 1e-9 slack absorbs `sep_local - tau` rounding when the
+            // step is snapped to the separation boundary.
+            if !burnout_emitted && tau + step >= burn_time - 1e-9 {
+                let frac = if step > 0.0 {
+                    ((burn_time - tau) / step).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let mut b = [0.0; 6];
+                for i in 0..6 {
+                    b[i] = s[i] + frac * (next[i] - s[i]);
+                }
+                // Same accumulated clock as every other event, so ordering
+                // survives float drift in the step sum.
+                events.push(event("Burnout", t_abs + frac * step, &b));
+                burnout_emitted = true;
+            }
+
+            // Apogee arms only on the final stage.
+            if active == last
+                && (phase == Phase::Ascent || phase == Phase::Rail)
+                && s[3] > 0.0
+                && next[3] <= 0.0
+            {
+                let frac = (s[3] / (s[3] - next[3])).clamp(0.0, 1.0);
+                let apogee_t = t_abs + frac * step;
+                let mut ap = [0.0; 6];
+                for i in 0..6 {
+                    ap[i] = s[i] + frac * (next[i] - s[i]);
+                }
+                apogee = (apogee_t, ap[1]);
+                events.push(event("Apogee", apogee_t, &ap));
+                ap[3] = 0.0;
+                s = ap;
+                let advanced = apogee_t - t_abs;
+                t_abs = apogee_t;
+                tau += advanced;
+                phase = Phase::Descent;
+                steps += 1;
+                continue;
+            }
+
+            if phase == Phase::Descent && s[1] > 0.0 && next[1] <= 0.0 {
+                let frac = (s[1] / (s[1] - next[1])).clamp(0.0, 1.0);
+                landing = (t_abs + frac * step, s[0] + frac * (next[0] - s[0]));
+                events.push(event(
+                    "Landing",
+                    landing.0,
+                    &[landing.1, 0.0, s[2], s[3], 0.0, 0.0],
+                ));
+                steps += 1;
+                break;
+            }
+
+            s = next;
+            t_abs += step;
+            tau += step;
+            steps += 1;
+            let speed = (s[2] * s[2] + s[3] * s[3]).sqrt();
+            max_velocity = max_velocity.max(speed);
+
+            if phase == Phase::Ascent && s[4].abs() > std::f64::consts::FRAC_PI_2 {
+                max_aoa_rad = max_aoa_rad.max(s[4].abs());
+                break;
+            }
+        }
+
+        // Separation: drop this stage, ignite the next at this instant.
+        if active < last && tau >= sep_local - 1e-12 {
+            if !burnout_emitted {
+                events.push(event("Burnout", t_abs, &s));
+            }
+            events.push(event("StageSeparation", t_abs, &s));
+            active += 1;
+            rocket = effective_rocket(active);
+            tau = 0.0;
+            burnout_emitted = false;
+            events.push(event("StageIgnition", t_abs, &s));
+            // Free flight regardless of how the booster left the rail.
+            if phase == Phase::Rail {
+                phase = Phase::Ascent;
+            }
+        }
+    }
+
+    PlanarStagedResult {
+        summary: PlanarSummary {
+            apogee_m: if apogee.1.is_nan() { s[1] } else { apogee.1 },
+            apogee_time_s: if apogee.0.is_nan() { t_abs } else { apogee.0 },
+            max_velocity_ms: max_velocity,
+            landing_time_s: landing.0,
+            landing_range_m: if landing.1.is_nan() { s[0] } else { landing.1 },
+            max_aoa_deg: max_aoa_rad.to_degrees(),
+            weathercock_deg: if weathercock_rad.is_nan() {
+                0.0
+            } else {
+                weathercock_rad.to_degrees()
+            },
+            steps,
+        },
+        events,
+    }
+}
+
 /// Timestep-convergence for the planar solver: apogee and landing range at
 /// dt, dt/2, dt/4, with the same acceptance rule as the vertical report.
 #[derive(Debug, Clone, Serialize, Deserialize)]

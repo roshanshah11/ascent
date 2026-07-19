@@ -6,12 +6,17 @@ members = [
     "crates/ascent-aero",
     "crates/ascent-app",
     "crates/ascent-review",
+    "crates/ascent-mcp",
+    "xtask",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+# MSRV: the toolchain CI builds and tests with. Raising it is a
+# deliberate, changelogged decision, not a side effect.
+rust-version = "1.97"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

@@ -154,6 +154,27 @@ describe("vehicleToMesh", () => {
     }
   });
 
+  it("renders a stage coupler as a structural tube segment", () => {
+    const v = reference();
+    v.parts.push({
+      id: 6,
+      kind: { type: "stage_coupler", length_m: 0.02, outer_radius_m: 0.0125, mass_g: 4, separation_delay_s: 0 },
+      children: [],
+    });
+    v.parts.push({
+      id: 7,
+      kind: { type: "body_tube", length_m: 0.09, outer_radius_m: 0.0125, wall_mm: 0.5, mass_g: 12 },
+      children: [],
+    });
+    // Coupler counts toward the stack height…
+    expect(stackHeightM(v)).toBeCloseTo(0.075 + 0.225 + 0.02 + 0.09, 9);
+    // …and emits its own part range with tube topology (2 rings stitched).
+    const mesh = vehicleToMesh(v);
+    const coupler = mesh.parts.find((p) => p.kind === "stage_coupler")!;
+    expect(coupler.id).toBe(6);
+    expect(coupler.count).toBe(RADIAL_SEGMENTS * 2 * 3);
+  });
+
   it("returns an empty mesh for an empty tree", () => {
     const mesh = vehicleToMesh({ name: "empty", parts: [] });
     expect(mesh.indices.length).toBe(0);

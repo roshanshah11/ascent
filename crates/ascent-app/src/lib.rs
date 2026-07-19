@@ -2,6 +2,16 @@
 //! whole RunRecord back — no fine-grained property calls across the bridge.
 //! All physics stays in ascent-domain / ascent-sim; this crate only maps
 //! DTOs and downsamples the trajectory for playback.
+//!
+//! The curated non-IPC surface (what ascent-cli and ascent-mcp build on):
+//! [`Command`] + the text grammar, [`Document`] / [`DocumentState`], the
+//! copilot seam ([`propose_batch`], [`apply_batch`], [`Proposal`]), studies
+//! ([`Study`], [`StudyKind`], [`study_input_hash`], [`run_study_now`],
+//! [`JobRunner`]), design/run DTOs ([`Design`], [`run_design`],
+//! [`RunRecord`]), projects ([`to_toml`] / [`from_toml`]), evidence
+//! ([`evidence_for`]), review ([`review_report`], [`review_repair`]),
+//! viewport markers ([`vehicle_markers`]), and staged-flight derivation
+//! ([`planar_stages_from_tree`], [`sixdof_stages_from_tree`]).
 
 pub mod cli;
 mod command;
@@ -11,7 +21,9 @@ mod dispersion_ipc;
 mod document;
 mod evidence;
 mod jobs;
+mod markers;
 mod project;
+mod staging;
 mod propose;
 mod review_ipc;
 mod study;
@@ -19,10 +31,12 @@ mod study;
 pub use command::Command;
 pub use credibility::{Factor, QuantityFlag, Regime, Scorecard};
 pub use document::{Document, DocumentState};
-pub use jobs::{JobEvent, JobId, JobRunner, JobStatus, JobView};
+pub use jobs::{run_study_now, JobEvent, JobId, JobRunner, JobStatus, JobView};
 pub use propose::{apply_batch, propose_batch, CommandCheck, DiffSummary, Proposal};
 pub use study::{study_input_hash, Study, StudyId, StudyKind, StudyResults};
 pub use design::{run_design, Design, ImportedMotor, MotorInfo, RunRecord, SpreadResult};
+pub use markers::{vehicle_markers, VehicleMarkers};
+pub use staging::{planar_stages_from_tree, sixdof_stages_from_tree};
 pub use dispersion_ipc::DispersionRequest;
 pub use project::{from_toml, to_toml, Project};
 pub use evidence::{evidence_for, EvidenceReport};
@@ -45,6 +59,14 @@ fn doc_lock<'a>(state: &'a DocState<'_>) -> std::sync::MutexGuard<'a, Document> 
 #[tauri::command]
 fn get_document(state: DocState) -> DocumentState {
     doc_lock(&state).state()
+}
+
+/// Read-only viewport overlay query: CP/CG stations for the current tree
+/// and motor. Never mutates; the render layer stays command-free.
+#[tauri::command]
+fn get_vehicle_markers(state: DocState) -> Result<markers::VehicleMarkers, String> {
+    let doc = doc_lock(&state);
+    markers::vehicle_markers(&doc.vehicle, &doc.design)
 }
 
 #[tauri::command]
@@ -224,6 +246,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             reference_design,
             get_document,
+            get_vehicle_markers,
             dispatch_command,
             undo_document,
             redo_document,
