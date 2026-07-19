@@ -19,7 +19,7 @@
 
 ---
 
-### Task 1: Lazy and visually finish the R3F workbench
+## Step 1: Lazy and visually finish the R3F workbench
 
 **Files:**
 - Modify: `app/src/App.tsx`
@@ -55,7 +55,7 @@ Expected: tests PASS; build emits an initial app chunk plus a separate `Viewport
 
 ---
 
-### Task 2: Make command discovery Rust-owned
+## Step 2: Make command discovery Rust-owned
 
 **Files:**
 - Modify: `crates/ascent-app/src/command.rs`
@@ -99,7 +99,7 @@ Expected: all focused tests PASS.
 
 ---
 
-### Task 3: Migrate ascent-mcp to official RMCP stdio
+## Step 3: Migrate ascent-mcp to official RMCP stdio
 
 **Files:**
 - Modify: `crates/ascent-mcp/Cargo.toml`
@@ -144,7 +144,7 @@ Expected: all SDK, eval, overflow, initialization, and stdio tests PASS.
 
 ---
 
-### Task 4: Complete workspace metadata and crate contracts
+## Step 4: Complete workspace metadata and crate contracts
 
 **Files:**
 - Modify: `crates/ascent-aero/Cargo.toml`
@@ -175,7 +175,7 @@ Expected: every workspace package reports MIT and docs build without warnings.
 
 ---
 
-### Task 5: Integration, visual QA, and final review
+## Step 5: Integration, visual QA, and final review
 
 **Files:**
 - Modify only files required by findings from the final review.
