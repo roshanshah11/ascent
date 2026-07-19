@@ -1,276 +1,409 @@
-//! MCP stdio server over the copilot seam (docs/COPILOT_INTERFACE.md).
+//! Official RMCP stdio server over Ascent's single command dispatcher.
 //!
-//! Public surface: [`McpServer`] (one document, one protocol state
-//! machine; `handle_line` maps one JSON-RPC request line to at most one
-//! response line) and [`serve`] (the blocking stdio loop `main` runs).
-//!
-//! The server is a thin adapter: every tool call lands on the same
-//! `Document` dispatcher every other client uses — `get_document`,
-//! `propose_commands`, `apply_proposal` and `read_evidence` add zero
-//! mutation logic, and `run_study` reuses the job runner's synchronous
-//! path. No network anywhere: stdin in, stdout out, that is the whole
-//! transport. Long-running studies adopt the 2026-07-28 Tasks extension
-//! shape (`task` argument on `tools/call`, `tasks/get`, `tasks/result`,
-//! `tasks/list`, `tasks/cancel`); execution itself stays synchronous and
-//! deterministic, so a created task is already `completed` when the
-//! client first polls it.
+//! The five tools are typed SDK tools, document state is server-owned, and
+//! every mutation still passes through `Document::dispatch` via the existing
+//! proposal and study seams. The only production transport is Tokio stdio.
 
 use std::collections::BTreeMap;
-use std::io::{BufRead, Write};
+use std::future::Future;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use ascent_app::{
-    apply_batch, evidence_for, propose_batch, run_study_now, Command, Document, StudyId,
+    apply_batch, evidence_for, propose_batch, run_study_now, Command, Document, DocumentState,
+    JobId, JobRunner, JobStatus, StudyId,
 };
-use serde_json::{json, Value};
+use chrono::{SecondsFormat, Utc};
+use rmcp::{
+    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
+    model::{
+        CallToolRequestParams, CallToolResult, CancelTaskParams, CancelTaskResult,
+        CreateTaskResult, GetTaskParams, GetTaskPayloadParams, GetTaskPayloadResult, GetTaskResult,
+        ListTasksResult, PaginatedRequestParams, ServerCapabilities, ServerInfo, Task, TaskStatus,
+        TasksCapability,
+    },
+    schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
+};
+use serde::Deserialize;
+use serde_json::Value;
 
-pub const PROTOCOL_VERSION: &str = "2026-07-28";
-
-pub struct McpServer {
-    doc: Document,
-    initialized: bool,
-    tasks: BTreeMap<String, Value>,
-    next_task: u64,
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct LinesRequest {
+    /// Journal-grammar command lines from docs/JOURNAL_FORMAT.md.
+    lines: Vec<String>,
 }
 
-impl Default for McpServer {
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct StudyRequest {
+    study_id: u64,
+}
+
+#[derive(Clone)]
+struct TaskRecord {
+    task: Task,
+    job_id: JobId,
+    result: Option<Value>,
+}
+
+/// One RMCP server instance, owning one Ascent document and its task runner.
+#[derive(Clone)]
+pub struct AscentMcp {
+    tool_router: ToolRouter<Self>,
+    document: Arc<Mutex<Document>>,
+    jobs: Arc<JobRunner>,
+    tasks: Arc<Mutex<BTreeMap<String, TaskRecord>>>,
+}
+
+impl Default for AscentMcp {
     fn default() -> Self {
-        Self {
-            doc: Document::default(),
-            initialized: false,
-            tasks: BTreeMap::new(),
-            next_task: 1,
-        }
+        Self::new()
     }
 }
 
-fn rpc_error(id: Value, code: i64, message: &str) -> Value {
-    json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-fn rpc_result(id: Value, result: Value) -> Value {
-    json!({ "jsonrpc": "2.0", "id": id, "result": result })
+fn now() -> String {
+    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
-/// Tool output per the spec: JSON payload as text content plus
-/// `structuredContent` for clients that read it.
-fn tool_ok(id: Value, payload: Value) -> Value {
-    rpc_result(
-        id,
-        json!({
-            "content": [{ "type": "text", "text": payload.to_string() }],
-            "structuredContent": payload,
-            "isError": false
-        }),
-    )
-}
-
-fn tool_err(id: Value, message: &str) -> Value {
-    rpc_result(
-        id,
-        json!({
-            "content": [{ "type": "text", "text": message }],
-            "isError": true
-        }),
-    )
-}
-
-fn parse_lines(arguments: &Value) -> Result<Vec<Command>, String> {
-    let lines = arguments
-        .get("lines")
-        .and_then(Value::as_array)
-        .ok_or("missing 'lines' array")?;
+fn parse_lines(lines: &[String]) -> Result<Vec<Command>, String> {
     lines
         .iter()
         .enumerate()
-        .map(|(i, line)| {
-            let text = line.as_str().ok_or(format!("line {} is not a string", i + 1))?;
-            Command::parse_text(text).map_err(|e| format!("line {}: {e}", i + 1))
+        .map(|(index, line)| {
+            Command::parse_text(line).map_err(|error| format!("line {}: {error}", index + 1))
         })
         .collect()
 }
 
-impl McpServer {
-    /// Handle one newline-delimited JSON-RPC message; `None` means no
-    /// response is due (notifications, parse-level garbage has an error).
-    pub fn handle_line(&mut self, line: &str) -> Option<Value> {
-        let message: Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => return Some(rpc_error(Value::Null, -32700, "parse error")),
-        };
-        let id = message.get("id").cloned();
-        let method = message.get("method").and_then(Value::as_str).unwrap_or("");
-        let params = message.get("params").cloned().unwrap_or(json!({}));
+fn study_id(value: u64) -> Result<StudyId, String> {
+    u32::try_from(value)
+        .map(StudyId)
+        .map_err(|_| format!("study_id {value} is out of range for a 32-bit study id"))
+}
 
-        // Notifications get no response.
-        let Some(id) = id else {
-            return None;
-        };
+fn structured<T: serde::Serialize>(value: &T) -> Result<CallToolResult, String> {
+    serde_json::to_value(value)
+        .map(CallToolResult::structured)
+        .map_err(|error| format!("serialize tool result: {error}"))
+}
 
-        Some(match method {
-            "initialize" => {
-                self.initialized = true;
-                rpc_result(
-                    id,
-                    json!({
-                        "protocolVersion": PROTOCOL_VERSION,
-                        "capabilities": { "tools": {}, "tasks": {} },
-                        "serverInfo": {
-                            "name": "ascent-mcp",
-                            "version": env!("CARGO_PKG_VERSION")
-                        }
-                    }),
-                )
-            }
-            "ping" => rpc_result(id, json!({})),
-            "tools/list" => rpc_result(id, json!({ "tools": tool_catalog() })),
-            "tools/call" => self.tools_call(id, &params),
-            "tasks/list" => {
-                let tasks: Vec<&Value> = self.tasks.values().collect();
-                rpc_result(id, json!({ "tasks": tasks }))
-            }
-            "tasks/get" => match self.task_for(&params) {
-                Ok(task) => rpc_result(id, json!({ "task": task.get("task") })),
-                Err(e) => rpc_error(id, -32602, &e),
-            },
-            "tasks/result" => match self.task_for(&params) {
-                Ok(task) => rpc_result(id, task.get("result").cloned().unwrap_or(json!({}))),
-                Err(e) => rpc_error(id, -32602, &e),
-            },
-            "tasks/cancel" => match self.task_for(&params) {
-                // Synchronous execution: every stored task already
-                // completed, and completed tasks cannot be cancelled.
-                Ok(_) => rpc_error(id, -32602, "task already completed"),
-                Err(e) => rpc_error(id, -32602, &e),
-            },
-            _ => rpc_error(id, -32601, &format!("method not found: {method}")),
-        })
+#[tool_router(router = tool_router)]
+impl AscentMcp {
+    pub fn new() -> Self {
+        let document = Arc::new(Mutex::new(Document::default()));
+        let jobs = JobRunner::new(document.clone(), |_| {});
+        Self {
+            tool_router: Self::tool_router(),
+            document,
+            jobs,
+            tasks: Arc::new(Mutex::new(BTreeMap::new())),
+        }
     }
 
-    fn task_for(&self, params: &Value) -> Result<&Value, String> {
-        let task_id = params
-            .get("taskId")
-            .and_then(Value::as_str)
-            .ok_or("missing taskId")?;
-        self.tasks
+    #[tool(description = "Read the full Ascent document state without mutating it")]
+    async fn get_document(&self) -> Result<CallToolResult, String> {
+        structured(&lock(&self.document).state())
+    }
+
+    #[tool(
+        description = "Dry-run journal-grammar commands and report validation and stale studies"
+    )]
+    async fn propose_commands(
+        &self,
+        Parameters(request): Parameters<LinesRequest>,
+    ) -> Result<CallToolResult, String> {
+        let commands = parse_lines(&request.lines)?;
+        structured(&propose_batch(&lock(&self.document), &commands))
+    }
+
+    #[tool(description = "Atomically validate and apply journal-grammar commands")]
+    async fn apply_proposal(
+        &self,
+        Parameters(request): Parameters<LinesRequest>,
+    ) -> Result<CallToolResult, String> {
+        let commands = parse_lines(&request.lines)?;
+        let mut document = lock(&self.document);
+        apply_batch(&mut document, &commands)?;
+        structured(&document.state())
+    }
+
+    #[tool(
+        description = "Run a study and land deterministic hash-stamped results",
+        execution(task_support = "optional")
+    )]
+    async fn run_study(
+        &self,
+        Parameters(request): Parameters<StudyRequest>,
+    ) -> Result<CallToolResult, String> {
+        let id = study_id(request.study_id)?;
+        let mut document = lock(&self.document);
+        run_study_now(&mut document, id)?;
+        structured(&document.state())
+    }
+
+    #[tool(description = "Read the deterministic evidence report for the current design")]
+    async fn read_evidence(&self) -> Result<CallToolResult, String> {
+        let report = evidence_for(&lock(&self.document).design)?;
+        structured(&report)
+    }
+
+    fn refresh_task(&self, task_id: &str) -> Result<TaskRecord, McpError> {
+        let job_id = lock(&self.tasks)
             .get(task_id)
-            .ok_or(format!("unknown task: {task_id}"))
-    }
+            .map(|record| record.job_id)
+            .ok_or_else(|| McpError::invalid_params(format!("unknown task: {task_id}"), None))?;
+        let job = self
+            .jobs
+            .jobs()
+            .into_iter()
+            .find(|job| job.id == job_id)
+            .ok_or_else(|| McpError::internal_error("task job disappeared", None))?;
 
-    fn tools_call(&mut self, id: Value, params: &Value) -> Value {
-        let name = params.get("name").and_then(Value::as_str).unwrap_or("");
-        let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
-        let as_task = params.get("task").is_some();
+        let mut tasks = lock(&self.tasks);
+        let record = tasks
+            .get_mut(task_id)
+            .expect("task exists while its record lock is held");
+        if matches!(
+            record.task.status,
+            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
+        ) {
+            return Ok(record.clone());
+        }
 
-        let outcome: Result<Value, String> = match name {
-            "get_document" => serde_json::to_value(self.doc.state()).map_err(|e| e.to_string()),
-            "propose_commands" => parse_lines(&arguments).and_then(|commands| {
-                serde_json::to_value(propose_batch(&self.doc, &commands)).map_err(|e| e.to_string())
-            }),
-            "apply_proposal" => parse_lines(&arguments).and_then(|commands| {
-                apply_batch(&mut self.doc, &commands)?;
-                serde_json::to_value(self.doc.state()).map_err(|e| e.to_string())
-            }),
-            "run_study" => {
-                let study_id = arguments.get("study_id").and_then(Value::as_u64);
-                match study_id {
-                    None => Err("missing 'study_id'".into()),
-                    Some(sid) => run_study_now(&mut self.doc, StudyId(sid as u32)).and_then(|()| {
-                        serde_json::to_value(self.doc.state()).map_err(|e| e.to_string())
-                    }),
-                }
+        let (status, message) = match job.status {
+            JobStatus::Queued => (TaskStatus::Working, Some("queued".to_string())),
+            JobStatus::Running => (TaskStatus::Working, Some("running".to_string())),
+            JobStatus::Done => {
+                let state: DocumentState = lock(&self.document).state();
+                let payload = serde_json::to_value(CallToolResult::structured(
+                    serde_json::to_value(state).map_err(|error| {
+                        McpError::internal_error(format!("serialize task state: {error}"), None)
+                    })?,
+                ))
+                .map_err(|error| {
+                    McpError::internal_error(format!("serialize task result: {error}"), None)
+                })?;
+                record.result = Some(payload);
+                (TaskStatus::Completed, Some("completed".to_string()))
             }
-            "read_evidence" => evidence_for(&self.doc.design)
-                .and_then(|report| serde_json::to_value(report).map_err(|e| e.to_string())),
-            _ => return tool_err(id, &format!("unknown tool: {name}")),
+            JobStatus::Cancelled => (TaskStatus::Cancelled, Some("cancelled".to_string())),
+            JobStatus::Failed => (
+                TaskStatus::Failed,
+                Some(job.error.unwrap_or_else(|| "study failed".to_string())),
+            ),
         };
-
-        match outcome {
-            Err(e) => tool_err(id, &e),
-            Ok(payload) => {
-                if as_task {
-                    // Tasks extension: synchronous execution means the
-                    // task is complete the moment it exists.
-                    let task_id = format!("task-{}", self.next_task);
-                    self.next_task += 1;
-                    let result = json!({
-                        "content": [{ "type": "text", "text": payload.to_string() }],
-                        "structuredContent": payload,
-                        "isError": false
-                    });
-                    self.tasks.insert(
-                        task_id.clone(),
-                        json!({
-                            "task": { "taskId": task_id, "status": "completed" },
-                            "result": result
-                        }),
-                    );
-                    rpc_result(id, json!({ "task": { "taskId": task_id, "status": "completed" } }))
-                } else {
-                    tool_ok(id, payload)
-                }
-            }
+        if record.task.status != status || record.task.status_message != message {
+            record.task.status = status;
+            record.task.status_message = message;
+            record.task.last_updated_at = now();
         }
+        Ok(record.clone())
+    }
+
+    fn task_ids(&self) -> Vec<String> {
+        lock(&self.tasks).keys().cloned().collect()
+    }
+
+    fn enqueue_study_task(&self, study_id: StudyId) -> Result<CreateTaskResult, McpError> {
+        let job_id = self
+            .jobs
+            .enqueue(study_id)
+            .map_err(|error| McpError::invalid_params(error, None))?;
+        let timestamp = now();
+        let task = Task::new(
+            format!("study-{}", job_id.0),
+            TaskStatus::Working,
+            timestamp.clone(),
+            timestamp,
+        )
+        .with_status_message("queued")
+        .with_poll_interval(50);
+        lock(&self.tasks).insert(
+            task.task_id.clone(),
+            TaskRecord {
+                task: task.clone(),
+                job_id,
+                result: None,
+            },
+        );
+        Ok(CreateTaskResult::new(task))
+    }
+
+    fn cancel_task_record(&self, task_id: &str) -> Result<CancelTaskResult, McpError> {
+        let record = self.refresh_task(task_id)?;
+        if matches!(
+            record.task.status,
+            TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
+        ) {
+            return Err(McpError::invalid_params(
+                format!("task {task_id} is already terminal"),
+                None,
+            ));
+        }
+        self.jobs
+            .cancel(record.job_id)
+            .map_err(|error| McpError::invalid_params(error, None))?;
+        let mut tasks = lock(&self.tasks);
+        let record = tasks
+            .get_mut(task_id)
+            .expect("task exists while its record lock is held");
+        record.task.status = TaskStatus::Cancelled;
+        record.task.status_message = Some("cancellation requested".to_string());
+        record.task.last_updated_at = now();
+        Ok(CancelTaskResult::new(record.task.clone()))
     }
 }
 
-fn tool_catalog() -> Value {
-    let lines_schema = json!({
-        "type": "object",
-        "properties": {
-            "lines": {
-                "type": "array",
-                "items": { "type": "string" },
-                "description": "Journal-grammar command lines (docs/JOURNAL_FORMAT.md)"
-            }
-        },
-        "required": ["lines"]
-    });
-    json!([
-        {
-            "name": "get_document",
-            "description": "Read the full document state: vehicle tree, design, studies with results and hashes, undo/redo flags.",
-            "inputSchema": { "type": "object", "properties": {} }
-        },
-        {
-            "name": "propose_commands",
-            "description": "Dry-run a batch of journal-grammar command lines. Mutates nothing; returns per-command errors and, when valid, a diff summary including studies_made_stale.",
-            "inputSchema": lines_schema
-        },
-        {
-            "name": "apply_proposal",
-            "description": "Re-validate and apply a command batch atomically; any error leaves the document untouched. Applied commands journal like GUI edits.",
-            "inputSchema": lines_schema
-        },
-        {
-            "name": "run_study",
-            "description": "Run a study by id against the current document and land its hash-stamped results. Supports task-augmented calls for long dispersions.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "study_id": { "type": "integer" } },
-                "required": ["study_id"]
-            }
-        },
-        {
-            "name": "read_evidence",
-            "description": "Deterministic evidence report for the current design: scorecard, input hashes, convergence.",
-            "inputSchema": { "type": "object", "properties": {} }
-        }
-    ])
-}
+#[tool_handler(router = self.tool_router)]
+impl ServerHandler for AscentMcp {
+    fn get_info(&self) -> ServerInfo {
+        let capabilities = ServerCapabilities::builder()
+            .enable_tools()
+            .enable_tasks_with(TasksCapability::server_default())
+            .build();
+        ServerInfo::new(capabilities).with_instructions(
+            "Ascent is deterministic and offline. Mutations use journal-grammar command batches.",
+        )
+    }
 
-/// Blocking stdio loop: one JSON-RPC message per line in, one per line
-/// out. The entire transport — no sockets, no network.
-pub fn serve(input: impl BufRead, mut output: impl Write) -> std::io::Result<()> {
-    let mut server = McpServer::default();
-    for line in input.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        if let Some(response) = server.handle_line(&line) {
-            writeln!(output, "{response}")?;
-            output.flush()?;
+    fn enqueue_task(
+        &self,
+        request: CallToolRequestParams,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> impl Future<Output = Result<CreateTaskResult, McpError>> + Send + '_ {
+        async move {
+            if request.name.as_ref() != "run_study" {
+                return Err(McpError::invalid_params(
+                    format!("tool {} does not support task execution", request.name),
+                    None,
+                ));
+            }
+            let arguments = request.arguments.unwrap_or_default();
+            let parsed: StudyRequest = serde_json::from_value(Value::Object(arguments))
+                .map_err(|error| McpError::invalid_params(error.to_string(), None))?;
+            let id =
+                study_id(parsed.study_id).map_err(|error| McpError::invalid_params(error, None))?;
+            self.enqueue_study_task(id)
         }
     }
-    Ok(())
+
+    fn list_tasks(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> impl Future<Output = Result<ListTasksResult, McpError>> + Send + '_ {
+        async move {
+            let mut tasks = Vec::new();
+            for task_id in self.task_ids() {
+                tasks.push(self.refresh_task(&task_id)?.task);
+            }
+            tasks.sort_by(|left, right| left.task_id.cmp(&right.task_id));
+            Ok(ListTasksResult::new(tasks))
+        }
+    }
+
+    fn get_task_info(
+        &self,
+        request: GetTaskParams,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> impl Future<Output = Result<GetTaskResult, McpError>> + Send + '_ {
+        async move {
+            Ok(GetTaskResult::new(
+                self.refresh_task(&request.task_id)?.task,
+            ))
+        }
+    }
+
+    fn get_task_result(
+        &self,
+        request: GetTaskPayloadParams,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> impl Future<Output = Result<GetTaskPayloadResult, McpError>> + Send + '_ {
+        async move {
+            let record = self.refresh_task(&request.task_id)?;
+            match (record.task.status, record.result) {
+                (TaskStatus::Completed, Some(result)) => Ok(GetTaskPayloadResult::new(result)),
+                (status, _) => Err(McpError::invalid_params(
+                    format!("task {} is not completed ({status:?})", request.task_id),
+                    None,
+                )),
+            }
+        }
+    }
+
+    fn cancel_task(
+        &self,
+        request: CancelTaskParams,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> impl Future<Output = Result<CancelTaskResult, McpError>> + Send + '_ {
+        async move { self.cancel_task_record(&request.task_id) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn study_ids_are_checked_instead_of_truncated() {
+        assert_eq!(study_id(u32::MAX as u64).unwrap(), StudyId(u32::MAX));
+        assert!(study_id(u32::MAX as u64 + 1)
+            .unwrap_err()
+            .contains("out of range"));
+    }
+
+    #[test]
+    fn command_lines_report_their_one_based_index() {
+        let error =
+            parse_lines(&["select-motor B6".into(), "remove-part nope".into()]).unwrap_err();
+        assert!(error.starts_with("line 2:"), "{error}");
+    }
+
+    #[test]
+    fn task_run_moves_from_working_to_completed_with_a_result() {
+        let server = AscentMcp::new();
+        let command = Command::parse_text(
+            "create-study \"spread\" native 42 {\"kind\":\"dispersion\",\"flights\":5}",
+        )
+        .unwrap();
+        apply_batch(&mut lock(&server.document), &[command]).unwrap();
+
+        let created = server.enqueue_study_task(StudyId(1)).unwrap();
+        assert_eq!(created.task.status, TaskStatus::Working);
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        let completed = loop {
+            let record = server.refresh_task(&created.task.task_id).unwrap();
+            if record.task.status == TaskStatus::Completed {
+                break record;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "task did not complete"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        let result = completed.result.expect("completed task has a result");
+        assert!(result["structuredContent"]["studies"][0]["results"].is_object());
+    }
+
+    #[test]
+    fn task_cancellation_prevents_results_from_landing() {
+        let server = AscentMcp::new();
+        let command = Command::parse_text(
+            "create-study \"long\" native 42 {\"kind\":\"dispersion\",\"flights\":20000}",
+        )
+        .unwrap();
+        apply_batch(&mut lock(&server.document), &[command]).unwrap();
+
+        let created = server.enqueue_study_task(StudyId(1)).unwrap();
+        let cancelled = server.cancel_task_record(&created.task.task_id).unwrap();
+        assert_eq!(cancelled.task.status, TaskStatus::Cancelled);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(lock(&server.document).studies[0].results.is_none());
+    }
 }

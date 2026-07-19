@@ -1,11 +1,9 @@
 # ascent-mcp: MCP stdio adapter over the copilot seam (v0.4, Pillar 3).
 #
-# Dependency justification: zero new external deps. The MCP 2026-07-28
-# protocol subset a stdio tool server needs (JSON-RPC 2.0, newline-delimited,
-# initialize/tools/tasks) is small enough to hand-roll on serde_json — the
-# official rmcp SDK was evaluated and rejected for V1 because it drags in a
-# tokio async-network runtime, which fights the no-runtime-network invariant
-# and the zero-unjustified-deps rule for what is a synchronous local pipe.
+# Dependency justification: the official MCP Rust SDK supplies protocol
+# framing, typed schemas, capability negotiation, Tasks, and stdio transport.
+# Only server/macros/transport-io are enabled in production; no HTTP feature,
+# listener, or client is present in the shipped binary.
 [package]
 name = "ascent-mcp"
 version = "0.0.0"
@@ -17,6 +15,12 @@ license.workspace = true
 ascent-app = { path = "../ascent-app" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rmcp = { version = "2.2.0", default-features = false, features = ["server", "macros", "transport-io"] }
+tokio = { version = "1", features = ["io-std", "macros", "rt", "rt-multi-thread", "sync", "time"] }
+
+[dev-dependencies]
+rmcp = { version = "2.2.0", default-features = false, features = ["client"] }
 
 [[bin]]
 name = "ascent-mcp"

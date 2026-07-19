@@ -1,8 +1,10 @@
-//! ascent-mcp: MCP stdio server for the Ascent copilot seam.
-//! Wire an MCP client at this binary; stdin/stdout is the whole transport.
+use rmcp::ServiceExt;
 
-fn main() -> std::io::Result<()> {
-    let stdin = std::io::stdin();
-    let stdout = std::io::stdout();
-    ascent_mcp::serve(stdin.lock(), stdout.lock())
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let service = ascent_mcp::AscentMcp::new()
+        .serve(rmcp::transport::stdio())
+        .await?;
+    service.waiting().await?;
+    Ok(())
 }

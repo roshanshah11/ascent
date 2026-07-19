@@ -1,182 +1,202 @@
-//! The seam, driven end-to-end over the MCP wire shape: initialize,
-//! create + run a study (as a task), propose a geometry edit, see the
-//! stored study go stale in the proposal diff, apply, and verify the
-//! document. Every state change flows through the one dispatcher.
-
-use ascent_mcp::{McpServer, PROTOCOL_VERSION};
+use ascent_mcp::AscentMcp;
+use rmcp::{
+    model::{
+        CallToolRequestParams, ClientInfo, ClientRequest, GetTaskParams, GetTaskPayloadParams,
+        Request, ServerResult, TaskMetadata, TaskStatus, TaskSupport,
+    },
+    ClientHandler, ServiceExt,
+};
 use serde_json::{json, Value};
 
-fn call(server: &mut McpServer, id: u64, method: &str, params: Value) -> Value {
-    let line = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
-    server.handle_line(&line.to_string()).expect("response due")
+#[derive(Debug, Clone, Default)]
+struct TestClient;
+
+impl ClientHandler for TestClient {
+    fn get_info(&self) -> ClientInfo {
+        ClientInfo::default()
+    }
 }
 
-fn tool(server: &mut McpServer, id: u64, name: &str, arguments: Value) -> Value {
-    let response = call(
-        server,
-        id,
-        "tools/call",
-        json!({ "name": name, "arguments": arguments }),
-    );
-    response["result"]["structuredContent"].clone()
+fn arguments(value: Value) -> serde_json::Map<String, Value> {
+    value.as_object().expect("object arguments").clone()
 }
 
-#[test]
-fn initialize_reports_the_protocol_version_and_tools() {
-    let mut server = McpServer::default();
-    let init = call(&mut server, 1, "initialize", json!({}));
-    assert_eq!(init["result"]["protocolVersion"], PROTOCOL_VERSION);
-    assert!(init["result"]["capabilities"]["tasks"].is_object());
+async fn sdk_pair() -> (
+    rmcp::service::RunningService<rmcp::RoleClient, TestClient>,
+    tokio::task::JoinHandle<()>,
+) {
+    let (server_transport, client_transport) = tokio::io::duplex(64 * 1024);
+    let server = AscentMcp::new();
+    let server_handle = tokio::spawn(async move {
+        let service = server.serve(server_transport).await.expect("server starts");
+        service.waiting().await.expect("server closes");
+    });
+    let client = TestClient
+        .serve(client_transport)
+        .await
+        .expect("client starts");
+    (client, server_handle)
+}
 
-    let list = call(&mut server, 2, "tools/list", json!({}));
-    let names: Vec<&str> = list["result"]["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|t| t["name"].as_str().unwrap())
-        .collect();
+#[tokio::test]
+async fn sdk_lists_exactly_the_five_public_tools() {
+    let (client, server) = sdk_pair().await;
+    let listed = client.list_tools(None).await.expect("tools/list");
+    let names: Vec<_> = listed.tools.iter().map(|tool| tool.name.as_ref()).collect();
     assert_eq!(
         names,
-        vec![
+        [
+            "apply_proposal",
             "get_document",
             "propose_commands",
-            "apply_proposal",
+            "read_evidence",
             "run_study",
-            "read_evidence"
         ]
     );
+    let run_study = listed
+        .tools
+        .iter()
+        .find(|tool| tool.name == "run_study")
+        .expect("run_study is listed");
+    assert_eq!(run_study.task_support(), TaskSupport::Optional);
+    client.cancel().await.expect("client closes");
+    server.await.expect("server task joins");
+}
+
+#[tokio::test]
+async fn study_id_overflow_is_a_visible_tool_error() {
+    let (client, server) = sdk_pair().await;
+    let result = client
+        .call_tool(
+            CallToolRequestParams::new("run_study")
+                .with_arguments(arguments(json!({ "study_id": 4_294_967_296_u64 }))),
+        )
+        .await
+        .expect("tool call returns a result");
+    assert_eq!(result.is_error, Some(true));
+    let text = result.content[0].as_text().expect("text error");
+    assert!(text.text.contains("out of range"), "{}", text.text);
+    client.cancel().await.expect("client closes");
+    server.await.expect("server task joins");
+}
+
+#[tokio::test]
+async fn propose_and_apply_report_studies_made_stale() {
+    let (client, server) = sdk_pair().await;
+    let created = client
+        .call_tool(
+            CallToolRequestParams::new("apply_proposal").with_arguments(arguments(json!({
+                "lines": ["create-study \"spread\" native 42 {\"kind\":\"dispersion\",\"flights\":5}"]
+            }))),
+        )
+        .await
+        .expect("create study");
+    assert_eq!(created.is_error, Some(false));
+
+    let ran = client
+        .call_tool(
+            CallToolRequestParams::new("run_study")
+                .with_arguments(arguments(json!({ "study_id": 1 }))),
+        )
+        .await
+        .expect("run study");
+    assert_eq!(ran.is_error, Some(false));
+
+    let proposal = client
+        .call_tool(
+            CallToolRequestParams::new("propose_commands").with_arguments(arguments(json!({
+                "lines": ["set-part-param 3 span_m 0.05"]
+            }))),
+        )
+        .await
+        .expect("propose edit");
+    let structured = proposal.structured_content.expect("structured proposal");
+    assert_eq!(structured["valid"], true);
+    assert_eq!(structured["diff"]["studies_made_stale"], json!([1]));
+
+    client.cancel().await.expect("client closes");
+    server.await.expect("server task joins");
+}
+
+#[tokio::test]
+async fn sdk_task_call_has_a_real_working_to_completed_lifecycle() {
+    let (client, server) = sdk_pair().await;
+    client
+        .call_tool(
+            CallToolRequestParams::new("apply_proposal").with_arguments(arguments(json!({
+                "lines": ["create-study \"task\" native 7 {\"kind\":\"dispersion\",\"flights\":5}"]
+            }))),
+        )
+        .await
+        .expect("create study");
+
+    let response = client
+        .send_request(ClientRequest::CallToolRequest(Request::new(
+            CallToolRequestParams::new("run_study")
+                .with_arguments(arguments(json!({ "study_id": 1 })))
+                .with_task(TaskMetadata::new()),
+        )))
+        .await
+        .expect("task-augmented tools/call");
+    let ServerResult::CreateTaskResult(created) = response else {
+        panic!("expected task creation response");
+    };
+    assert_eq!(created.task.status, TaskStatus::Working);
+
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        let response = client
+            .send_request(ClientRequest::GetTaskRequest(Request::new(
+                GetTaskParams::new(created.task.task_id.clone()),
+            )))
+            .await
+            .expect("tasks/get");
+        let ServerResult::GetTaskResult(task) = response else {
+            panic!("expected task status response");
+        };
+        if task.task.status == TaskStatus::Completed {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "task did not complete"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    let response = client
+        .send_request(ClientRequest::GetTaskPayloadRequest(Request::new(
+            GetTaskPayloadParams::new(created.task.task_id),
+        )))
+        .await
+        .expect("tasks/result");
+    let payload = match response {
+        ServerResult::GetTaskPayloadResult(result) => result.0,
+        ServerResult::CustomResult(result) => result.0,
+        ServerResult::CallToolResult(result) => {
+            result.structured_content.expect("structured task result")
+        }
+        other => panic!("expected task payload response, got {other:?}"),
+    };
+    let studies = payload.get("structuredContent").unwrap_or(&payload)["studies"].clone();
+    assert!(studies[0]["results"].is_object());
+
+    client.cancel().await.expect("client closes");
+    server.await.expect("server task joins");
 }
 
 #[test]
-fn notifications_get_no_response_and_unknown_methods_error() {
-    let mut server = McpServer::default();
-    let note = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
-    assert!(server.handle_line(&note.to_string()).is_none());
-
-    let bad = call(&mut server, 1, "no/such", json!({}));
-    assert_eq!(bad["error"]["code"], -32601);
-
-    let garbage = server.handle_line("not json").unwrap();
-    assert_eq!(garbage["error"]["code"], -32700);
-}
-
-#[test]
-fn propose_apply_roundtrip_sees_studies_made_stale() {
-    let mut server = McpServer::default();
-    call(&mut server, 1, "initialize", json!({}));
-
-    // Create a small dispersion study through the seam.
-    let state = tool(
-        &mut server,
-        2,
-        "apply_proposal",
-        json!({ "lines": ["create-study \"spread\" native 42 {\"kind\":\"dispersion\",\"flights\":5}"] }),
-    );
-    let study_id = state["studies"][0]["id"].as_u64().unwrap();
-
-    // Run it as a task (Tasks extension): synchronous execution, so the
-    // created task is already completed and its result is fetchable.
-    let created = call(
-        &mut server,
-        3,
-        "tools/call",
-        json!({ "name": "run_study", "arguments": { "study_id": study_id }, "task": {} }),
-    );
-    let task_id = created["result"]["task"]["taskId"].as_str().unwrap().to_string();
-    assert_eq!(created["result"]["task"]["status"], "completed");
-    let got = call(&mut server, 4, "tasks/get", json!({ "taskId": task_id }));
-    assert_eq!(got["result"]["task"]["status"], "completed");
-    let result = call(&mut server, 5, "tasks/result", json!({ "taskId": task_id }));
-    let landed = &result["result"]["structuredContent"]["studies"][0]["results"];
-    assert!(landed.is_object(), "study results landed: {result}");
-
-    // Propose a fin-span edit: the proposal must flag the stored study
-    // as going stale — the physics-in-the-loop warning.
-    let proposal = tool(
-        &mut server,
-        6,
-        "propose_commands",
-        json!({ "lines": ["set-part-param 3 span_m 0.05"] }),
-    );
-    assert_eq!(proposal["valid"], true, "{proposal}");
-    assert_eq!(
-        proposal["diff"]["studies_made_stale"],
-        json!([study_id]),
-        "{proposal}"
-    );
-
-    // Document unchanged by the dry run.
-    let before = tool(&mut server, 7, "get_document", json!({}));
-    assert_eq!(
-        before["vehicle"]["parts"][1]["children"][0]["kind"]["span_m"],
-        json!(0.0375)
-    );
-
-    // Apply, then verify the edit landed and the results are now stale
-    // relative to the new tree (hash mismatch is the staleness signal).
-    let after = tool(
-        &mut server,
-        8,
-        "apply_proposal",
-        json!({ "lines": ["set-part-param 3 span_m 0.05"] }),
-    );
-    assert_eq!(
-        after["vehicle"]["parts"][1]["children"][0]["kind"]["span_m"],
-        json!(0.05)
-    );
-    assert!(after["studies"][0]["results"].is_object());
-
-    // An invalid batch reports errors and mutates nothing.
-    let invalid = tool(
-        &mut server,
-        9,
-        "apply_proposal",
-        json!({ "lines": ["set-part-param 999 span_m 0.06"] }),
-    );
-    // apply_batch error surfaces as a tool error (isError true → the
-    // structuredContent path is absent).
-    assert!(invalid.is_null(), "{invalid}");
-    let unchanged = tool(&mut server, 10, "get_document", json!({}));
-    assert_eq!(
-        unchanged["vehicle"]["parts"][1]["children"][0]["kind"]["span_m"],
-        json!(0.05)
-    );
-}
-
-#[test]
-fn run_study_without_task_returns_state_inline() {
-    let mut server = McpServer::default();
-    tool(
-        &mut server,
-        1,
-        "apply_proposal",
-        json!({ "lines": ["create-study \"spread\" native 7 {\"kind\":\"dispersion\",\"flights\":3}"] }),
-    );
-    let state = tool(&mut server, 2, "run_study", json!({ "study_id": 1 }));
-    assert!(state["studies"][0]["results"].is_object());
-    let hash = state["studies"][0]["results"]["input_hash"].as_str().unwrap();
-    assert_eq!(hash.len(), 64);
-}
-
-#[test]
-fn stdio_serve_speaks_newline_delimited_jsonrpc() {
-    let requests = concat!(
-        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
-        "\n",
-        r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
-        "\n",
-        r#"{"jsonrpc":"2.0","id":2,"method":"ping"}"#,
-        "\n"
-    );
-    let mut out = Vec::new();
-    ascent_mcp::serve(requests.as_bytes(), &mut out).unwrap();
-    let lines: Vec<Value> = String::from_utf8(out)
-        .unwrap()
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect();
-    // Two responses for three inputs: the notification is silent.
-    assert_eq!(lines.len(), 2);
-    assert_eq!(lines[0]["id"], 1);
-    assert_eq!(lines[1]["id"], 2);
+fn production_features_and_startup_are_stdio_only() {
+    let manifest = include_str!("../Cargo.toml");
+    assert!(manifest.contains("\"server\", \"macros\", \"transport-io\""));
+    for forbidden in ["server-side-http", "reqwest", "transport-streamable-http"] {
+        assert!(
+            !manifest.contains(forbidden),
+            "enabled forbidden feature: {forbidden}"
+        );
+    }
+    let main = include_str!("../src/main.rs");
+    assert!(main.contains("rmcp::transport::stdio()"));
+    assert!(!main.contains("TcpListener"));
+    assert!(!main.contains("Http"));
 }
