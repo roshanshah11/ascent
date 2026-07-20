@@ -15,6 +15,7 @@
 pub mod eng_import;
 pub mod evidence;
 pub mod motor;
+pub mod reference;
 pub mod registry;
 pub mod telemetry;
 pub mod vehicle;

@@ -28,6 +28,7 @@ pub mod events;
 pub mod evidence_trace;
 pub mod planar;
 pub mod profile;
+pub mod reference_trace;
 pub mod rocket;
 #[cfg(feature = "bridge-rocketpy")]
 pub mod rocketpy_bridge;

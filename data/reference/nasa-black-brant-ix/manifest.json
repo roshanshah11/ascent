@@ -1,0 +1,29 @@
+{
+  "mission_id": "nasa.black-brant-ix.reference",
+  "caveat": "Evidence-graded reference scenario based on the NASA Black Brant IX class. It is not a reconstruction of a historical NASA flight and does not claim flight-equivalent fidelity.",
+  "sources": [
+    {
+      "id": "nasa-tp-20230006855",
+      "title": "Sounding Rockets User Handbook, Appendix A.4",
+      "url": "https://ntrs.nasa.gov/citations/20230006855",
+      "retrieved": "2026-07-20",
+      "rights": "NASA public technical publication; U.S. Government work",
+      "sha256": "a59b84305378612dad36ee7eb2cca45eda662abdc3cf8e4fdc072dc555c9581d",
+      "original_sha256": "2420152937522d053fcb78813ba944181882f7e5314919d47e692610fbe90495",
+      "stored_path": "data/reference/nasa-black-brant-ix/sources/nasa-tp-20230006855-excerpt.txt",
+      "grade": "authoritative"
+    }
+  ],
+  "evidence": [
+    {"source_id":"nasa-tp-20230006855","field_path":"vehicle.stage_architecture","grade":"authoritative"},
+    {"source_id":"nasa-tp-20230006855","field_path":"vehicle.terrier_geometry","grade":"authoritative"},
+    {"source_id":"nasa-tp-20230006855","field_path":"vehicle.black_brant_geometry","grade":"authoritative"},
+    {"source_id":"nasa-tp-20230006855","field_path":"vehicle.payload_envelope","grade":"authoritative"},
+    {"source_id":"nasa-tp-20230006855","field_path":"motor.black_brant_published_performance","grade":"authoritative"},
+    {"source_id":"nasa-tp-20230006855","field_path":"motor.black_brant_reference_curve","grade":"derived","formula":"constant-thrust plateau normalized to the published average thrust and action time; endpoints include the implicit zero-thrust start and explicit burnout sample","inputs":["motor.black_brant_published_performance"]},
+    {"source_id":"nasa-tp-20230006855","field_path":"vehicle.metric_conversions","grade":"derived","formula":"metres = inches * 0.0254; kilograms = pounds * 0.45359237; newtons = pounds-force * 4.4482216153","inputs":["vehicle.terrier_geometry","vehicle.black_brant_geometry","vehicle.payload_envelope","motor.black_brant_performance"]},
+    {"source_id":"nasa-tp-20230006855","field_path":"motor.terrier_performance","grade":"approximate","impact":"The public handbook section specifies Terrier geometry but not a complete thrust curve or loaded mass. The bounded reference curve affects trajectory magnitude and timing and must not be treated as flight prediction."},
+    {"source_id":"nasa-tp-20230006855","field_path":"vehicle.dry_masses_and_fin_geometry","grade":"approximate","impact":"Public class-level data does not close every structural mass or fin dimension. These values primarily affect rigid-body response, stability, and visual proportions."},
+    {"source_id":"nasa-tp-20230006855","field_path":"simulation.aerodynamics_and_recovery","grade":"approximate","impact":"Constant aerodynamic coefficients and a generic recovery system are used to produce a deterministic review trace, not a validated flight reconstruction."}
+  ]
+}

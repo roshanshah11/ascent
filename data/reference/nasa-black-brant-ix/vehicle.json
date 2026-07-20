@@ -1,0 +1,36 @@
+{
+  "mission_id": "nasa.black-brant-ix.reference",
+  "vehicle": {
+    "name": "NASA Black Brant IX MOD2 reference",
+    "parts": [
+      {"id":1,"kind":{"type":"nose_cone","shape":"tangent_ogive","length_m":1.315,"base_radius_m":0.219202,"mass_g":25000.0},"children":[]},
+      {"id":2,"kind":{"type":"body_tube","length_m":1.225,"outer_radius_m":0.219202,"wall_mm":8.0,"mass_g":75000.0},"children":[
+        {"id":3,"kind":{"type":"mass_component","name":"minimum handbook payload","position_m":0.6,"mass_g":226796.185},"children":[]},
+        {"id":4,"kind":{"type":"parachute","diameter_cm":700.0,"cd":1.5,"position_m":0.9,"mass_g":35000.0},"children":[]}
+      ]},
+      {"id":5,"kind":{"type":"body_tube","length_m":5.6642,"outer_radius_m":0.219202,"wall_mm":10.0,"mass_g":75000.0},"children":[
+        {"id":6,"kind":{"type":"fin_set","count":4,"root_chord_m":1.0,"tip_chord_m":0.45,"span_m":0.55,"sweep_m":0.3,"thickness_mm":16.0,"mass_g":60000.0},"children":[]},
+        {"id":7,"kind":{"type":"motor_mount","motor_designation":"BLACK-BRANT-V-REF","length_m":5.6642,"position_m":0.0,"mass_g":50000.0},"children":[]}
+      ]},
+      {"id":8,"kind":{"type":"stage_coupler","length_m":0.2,"outer_radius_m":0.2286,"mass_g":100000.0,"separation_delay_s":0.0},"children":[]},
+      {"id":9,"kind":{"type":"body_tube","length_m":4.2926,"outer_radius_m":0.2286,"wall_mm":12.0,"mass_g":150000.0},"children":[
+        {"id":10,"kind":{"type":"fin_set","count":4,"root_chord_m":1.05,"tip_chord_m":0.5,"span_m":0.47,"sweep_m":0.32,"thickness_mm":18.0,"mass_g":100000.0},"children":[]},
+        {"id":11,"kind":{"type":"motor_mount","motor_designation":"TERRIER-MK70-REF","length_m":4.2926,"position_m":0.0,"mass_g":50000.0},"children":[]}
+      ]}
+    ]
+  },
+  "motors": [
+    {
+      "designation":"TERRIER-MK70-REF","manufacturer":"Reference approximation from NASA class data","total_mass_kg":900.0,"propellant_mass_kg":600.0,"expected_total_impulse_ns":1531100.0,
+      "thrust_curve":[[0.1,251000.0],[6.1,251000.0],[6.2,0.0]],
+      "provenance":{"grade":"approximate","reason":"Handbook A.4 provides geometry but no complete MK70 mass and thrust curve"},
+      "diameter_mm":457.2,"length_mm":4292.6,"expected_burn_time_s":6.2,"expected_avg_thrust_n":246951.6129,"expected_max_thrust_n":251000.0
+    },
+    {
+      "designation":"BLACK-BRANT-V-REF","manufacturer":"Reference curve from NASA TP 20230006855","total_mass_kg":1282.301,"propellant_mass_kg":1008.335,"expected_total_impulse_ns":2852285.2,
+      "thrust_curve":[[0.1,104098.0],[27.4,104098.0],[27.5,0.0]],
+      "provenance":{"grade":"derived","source":"NASA TP 20230006855 Appendix A.4","method":"plateau curve normalized to authoritative average thrust and action time"},
+      "diameter_mm":438.404,"length_mm":5664.2,"expected_burn_time_s":27.5,"expected_avg_thrust_n":103718.987,"expected_max_thrust_n":104098.0
+    }
+  ]
+}

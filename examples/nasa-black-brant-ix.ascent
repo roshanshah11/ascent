@@ -1,0 +1,8 @@
+{
+  "schema": "ascent.reference-mission.v1",
+  "mission_id": "nasa.black-brant-ix.reference",
+  "title": "NASA Black Brant IX reference mission",
+  "reference_manifest": "data/reference/nasa-black-brant-ix/manifest.json",
+  "vehicle_fixture": "data/reference/nasa-black-brant-ix/vehicle.json",
+  "notice": "Reference scenario, not a reconstruction of a historical NASA flight."
+}

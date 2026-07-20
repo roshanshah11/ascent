@@ -1,0 +1,15 @@
+NASA Technical Publication 20230006855
+Sounding Rockets User Handbook, 810-HB-SRP, May 2023
+NTRS citation: https://ntrs.nasa.gov/citations/20230006855
+PDF: https://ntrs.nasa.gov/api/citations/20230006855/downloads/NASA%20TP%2020230006855%202023.05.08.pdf
+PDF SHA-256 retrieved 2026-07-20: 2420152937522d053fcb78813ba944181882f7e5314919d47e692610fbe90495
+
+Exact transcription of Appendix A.4, page 139:
+
+The Black Brant IX launch vehicle consists of two stages. The first stage is a military surplus, Terrier MK12 or MK70 motor; the second stage is the Black Brant motor with extended exit cone. The Black Brant IX MOD2 (MK70) and MOD3 (MK12) launch vehicles provide a wide range of capabilities for the science community which are not met by other NASA launch vehicles.
+
+The Terrier booster consists of either a MK12 or MK70 rocket motor with 2.5 ft2 fins arranged in a cruciform. The Terrier has a diameter of 18 inches and is 169 inches long. The Black Brant rocket motor, with extended exit cone, produces an average thrust of 23,317 pounds and has an action time of 27.5 seconds. The diameter is 17.26 inches, and it is 223 inches long. The loaded motor weight, including hardware, is 2,827 pounds which includes 2,223 pounds of propellant. The typical burnout roll rate for the Black Brant IX is approximately 4 cycles per second.
+
+Exact transcription of the payload paragraph, page 140:
+
+The standard payload configuration for the Black Brant IX vehicle is 17.26 inches in diameter with a 3:1 ogive nose cone. Bulbous, 22-inch diameter payloads are routinely flown on the Black Brant IX vehicle. Payload weights have ranged from 500 to 2,900 pounds and lengths have ranged from 100 to 350 inches.
