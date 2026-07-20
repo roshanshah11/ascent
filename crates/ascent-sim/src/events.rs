@@ -9,6 +9,10 @@ pub enum EventKind {
     StageIgnition,
     Apogee,
     RecoveryDeploy,
+    /// Dual-deploy main opening (descending through the configured
+    /// altitude, or at apogee when apogee is already below it).
+    /// `RecoveryDeploy` remains the apogee-side deployment event.
+    MainDeploy,
     Landing,
 }
 

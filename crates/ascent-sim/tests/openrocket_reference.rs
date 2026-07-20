@@ -68,6 +68,8 @@ fn matched_setup(reference: &Reference) -> (Rocket, Motor, Environment, SimConfi
         recovery: Some(Recovery {
             chute_cd: reference.chute("cd"),
             chute_area_m2: std::f64::consts::PI * (chute_d / 2.0) * (chute_d / 2.0),
+            drogue: None,
+            main_deploy_altitude_m: None,
         }),
     };
     let env = Environment {
@@ -140,11 +142,7 @@ fn apogee_matches_openrocket() {
 
     // 5% — the headline number. Vertical no-wind flight should slightly beat
     // OpenRocket's 2 m/s-wind 3D flight, never trail it badly.
-    assert_relative_eq!(
-        r.apogee_m,
-        reference.value("apogee_m"),
-        max_relative = 0.05
-    );
+    assert_relative_eq!(r.apogee_m, reference.value("apogee_m"), max_relative = 0.05);
     // 10% on apogee TIME only: OpenRocket deploys the chute at the ejection
     // charge (6.861 s, before apogee), which truncates the coast — its apogee
     // registers at 7.278 s. We coast ballistically to ~7.82 s. Altitude still

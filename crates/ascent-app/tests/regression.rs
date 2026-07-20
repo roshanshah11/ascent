@@ -36,7 +36,10 @@ fn reference_summary_matches_golden_pin_exactly() {
         "landing_time_s",
         "landing_velocity_ms",
     ] {
-        let (l, g) = (live[field].as_f64().unwrap(), golden[field].as_f64().unwrap());
+        let (l, g) = (
+            live[field].as_f64().unwrap(),
+            golden[field].as_f64().unwrap(),
+        );
         assert!(
             (l - g).abs() < 1e-9,
             "{field} drifted: live {l} vs golden {g}"

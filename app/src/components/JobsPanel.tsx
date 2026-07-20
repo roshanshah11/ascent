@@ -101,19 +101,22 @@ export default function JobsPanel({
   };
 
   return (
-    <section style={{ marginTop: 16, maxWidth: 560 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-        <h3 style={{ margin: "4px 0" }}>Studies</h3>
-        <button onClick={createStudy}>New dispersion study</button>
+    <section className="jobs-panel">
+      <div className="jobs-toolbar">
+        <div>
+          <span className="panel-eyebrow">Compute queue</span>
+          <h3>Studies & jobs</h3>
+        </div>
+        <button className="button-secondary" onClick={createStudy}>New dispersion study</button>
       </div>
-      {notice && <div style={{ color: "#c74b3c", fontSize: 12 }}>{notice}</div>}
+      {notice && <div className="inline-error">{notice}</div>}
       {studies.length === 0 && (
-        <div style={{ color: "#9aa1ab", fontSize: 12 }}>
+        <div className="jobs-empty">
           No studies yet. A study is a saved question — one flight, a
           dispersion, a trade — with its results tracked against the design.
         </div>
       )}
-      <ul style={{ listStyle: "none", padding: 0, margin: "8px 0" }}>
+      <ul className="jobs-list">
         {studies.map((study) => {
           const state = running[study.id];
           const pct =
@@ -121,19 +124,12 @@ export default function JobsPanel({
           return (
             <li
               key={study.id}
-              style={{
-                border: "1px solid #30363d",
-                borderRadius: 6,
-                padding: "6px 10px",
-                marginBottom: 6,
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-              }}
+              className="job-row"
             >
-              <div style={{ flex: 1 }}>
-                <div>{study.name}</div>
-                <div style={{ fontSize: 11, color: "#9aa1ab" }}>
+              <span className={`job-indicator ${state ? "running" : study.results ? "done" : "queued"}`} />
+              <div className="job-copy">
+                <div className="job-name">{study.name}</div>
+                <div className="job-meta">
                   {kindLabel(study)} · seed {study.seed} ·{" "}
                   {state
                     ? "running"
@@ -145,11 +141,11 @@ export default function JobsPanel({
               {state ? (
                 <>
                   <progress value={state.completed} max={Math.max(state.total, 1)} />
-                  <span style={{ fontSize: 11, width: 34, textAlign: "right" }}>{pct}%</span>
-                  <button onClick={() => cancel(state)}>Cancel</button>
+                  <span className="job-percent">{pct}%</span>
+                  <button className="button-secondary" onClick={() => cancel(state)}>Cancel</button>
                 </>
               ) : (
-                <button onClick={() => run(study)}>Run</button>
+                <button className="button-secondary" onClick={() => run(study)}>Run</button>
               )}
             </li>
           );

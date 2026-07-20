@@ -30,16 +30,10 @@ fn parse_positive_header_number(
         .parse()
         .map_err(|_| malformed(line, format!("invalid {field} '{raw}'")))?;
     if !value.is_finite() {
-        return Err(malformed(
-            line,
-            format!("non-finite {field} '{raw}'"),
-        ));
+        return Err(malformed(line, format!("non-finite {field} '{raw}'")));
     }
     if value <= 0.0 {
-        return Err(malformed(
-            line,
-            format!("nonpositive {field} '{raw}'"),
-        ));
+        return Err(malformed(line, format!("nonpositive {field} '{raw}'")));
     }
     Ok(value)
 }
@@ -76,8 +70,7 @@ pub fn parse_eng(text: &str, provenance: &Value) -> Result<Vec<Motor>, EngImport
         let diameter_mm = parse_positive_header_number(line_no, "diameter_mm", fields[1])?;
         let length_mm = parse_positive_header_number(line_no, "length_mm", fields[2])?;
         // fields[3] is the delay list (e.g. "0-3-5-7"); not modeled on Motor.
-        let propellant_mass_kg =
-            parse_positive_header_number(line_no, "propellant_kg", fields[4])?;
+        let propellant_mass_kg = parse_positive_header_number(line_no, "propellant_kg", fields[4])?;
         let total_mass_kg = parse_positive_header_number(line_no, "loaded_mass_kg", fields[5])?;
         if propellant_mass_kg > total_mass_kg {
             return Err(malformed(
@@ -113,10 +106,16 @@ pub fn parse_eng(text: &str, provenance: &Value) -> Result<Vec<Motor>, EngImport
                 ));
             }
             let t: f64 = data_fields[0].parse().map_err(|_| {
-                malformed(data_line_no, format!("non-numeric time_s '{}'", data_fields[0]))
+                malformed(
+                    data_line_no,
+                    format!("non-numeric time_s '{}'", data_fields[0]),
+                )
             })?;
             let thrust: f64 = data_fields[1].parse().map_err(|_| {
-                malformed(data_line_no, format!("non-numeric thrust_n '{}'", data_fields[1]))
+                malformed(
+                    data_line_no,
+                    format!("non-numeric thrust_n '{}'", data_fields[1]),
+                )
             })?;
 
             if !t.is_finite() {
@@ -203,10 +202,7 @@ pub fn parse_eng(text: &str, provenance: &Value) -> Result<Vec<Motor>, EngImport
 
         let expected_burn_time_s = thrust_curve.last().map(|&(t, _)| t).unwrap_or(0.0);
         let expected_total_impulse_ns = trapezoidal_impulse(&thrust_curve);
-        let expected_max_thrust_n = thrust_curve
-            .iter()
-            .map(|&(_, f)| f)
-            .fold(0.0_f64, f64::max);
+        let expected_max_thrust_n = thrust_curve.iter().map(|&(_, f)| f).fold(0.0_f64, f64::max);
         let expected_avg_thrust_n = if expected_burn_time_s > 0.0 {
             expected_total_impulse_ns / expected_burn_time_s
         } else {

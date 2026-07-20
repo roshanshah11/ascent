@@ -5,12 +5,11 @@
 //! proposal and study seams. The only production transport is Tokio stdio.
 
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use ascent_app::{
-    apply_batch, evidence_for, propose_batch, run_study_now, Command, Document, DocumentState,
-    JobId, JobRunner, JobStatus, StudyId,
+    apply_batch, evidence_for, evidence_for_study, propose_batch, run_study_now, Command, Document,
+    DocumentState, JobId, JobRunner, JobStatus, StudyId,
 };
 use chrono::{SecondsFormat, Utc};
 use rmcp::{
@@ -35,6 +34,12 @@ struct LinesRequest {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct StudyRequest {
     study_id: u64,
+}
+
+#[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
+struct EvidenceRequest {
+    /// Optional completed study whose result hashes should be linked explicitly.
+    study_id: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -145,9 +150,31 @@ impl AscentMcp {
         structured(&document.state())
     }
 
-    #[tool(description = "Read the deterministic evidence report for the current design")]
-    async fn read_evidence(&self) -> Result<CallToolResult, String> {
-        let report = evidence_for(&lock(&self.document).design)?;
+    #[tool(
+        description = "Read deterministic evidence; optional study_id links result and current-input hashes"
+    )]
+    async fn read_evidence(
+        &self,
+        Parameters(request): Parameters<EvidenceRequest>,
+    ) -> Result<CallToolResult, String> {
+        let document = lock(&self.document);
+        let report = match request.study_id {
+            Some(value) => {
+                let id = study_id(value)?;
+                let study = document
+                    .studies
+                    .iter()
+                    .find(|study| study.id == id)
+                    .ok_or_else(|| format!("no study {value}"))?;
+                evidence_for_study(
+                    &document.vehicle,
+                    &document.design,
+                    document.atmosphere.as_ref(),
+                    study,
+                )?
+            }
+            None => evidence_for(&document.design)?,
+        };
         structured(&report)
     }
 
@@ -270,77 +297,69 @@ impl ServerHandler for AscentMcp {
         )
     }
 
-    fn enqueue_task(
+    async fn enqueue_task(
         &self,
         request: CallToolRequestParams,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> impl Future<Output = Result<CreateTaskResult, McpError>> + Send + '_ {
-        async move {
-            if request.name.as_ref() != "run_study" {
-                return Err(McpError::invalid_params(
-                    format!("tool {} does not support task execution", request.name),
-                    None,
-                ));
-            }
-            let arguments = request.arguments.unwrap_or_default();
-            let parsed: StudyRequest = serde_json::from_value(Value::Object(arguments))
-                .map_err(|error| McpError::invalid_params(error.to_string(), None))?;
-            let id =
-                study_id(parsed.study_id).map_err(|error| McpError::invalid_params(error, None))?;
-            self.enqueue_study_task(id)
+    ) -> Result<CreateTaskResult, McpError> {
+        if request.name.as_ref() != "run_study" {
+            return Err(McpError::invalid_params(
+                format!("tool {} does not support task execution", request.name),
+                None,
+            ));
         }
+        let arguments = request.arguments.unwrap_or_default();
+        let parsed: StudyRequest = serde_json::from_value(Value::Object(arguments))
+            .map_err(|error| McpError::invalid_params(error.to_string(), None))?;
+        let id =
+            study_id(parsed.study_id).map_err(|error| McpError::invalid_params(error, None))?;
+        self.enqueue_study_task(id)
     }
 
-    fn list_tasks(
+    async fn list_tasks(
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> impl Future<Output = Result<ListTasksResult, McpError>> + Send + '_ {
-        async move {
-            let mut tasks = Vec::new();
-            for task_id in self.task_ids() {
-                tasks.push(self.refresh_task(&task_id)?.task);
-            }
-            tasks.sort_by(|left, right| left.task_id.cmp(&right.task_id));
-            Ok(ListTasksResult::new(tasks))
+    ) -> Result<ListTasksResult, McpError> {
+        let mut tasks = Vec::new();
+        for task_id in self.task_ids() {
+            tasks.push(self.refresh_task(&task_id)?.task);
         }
+        tasks.sort_by(|left, right| left.task_id.cmp(&right.task_id));
+        Ok(ListTasksResult::new(tasks))
     }
 
-    fn get_task_info(
+    async fn get_task_info(
         &self,
         request: GetTaskParams,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> impl Future<Output = Result<GetTaskResult, McpError>> + Send + '_ {
-        async move {
-            Ok(GetTaskResult::new(
-                self.refresh_task(&request.task_id)?.task,
-            ))
-        }
+    ) -> Result<GetTaskResult, McpError> {
+        Ok(GetTaskResult::new(
+            self.refresh_task(&request.task_id)?.task,
+        ))
     }
 
-    fn get_task_result(
+    async fn get_task_result(
         &self,
         request: GetTaskPayloadParams,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> impl Future<Output = Result<GetTaskPayloadResult, McpError>> + Send + '_ {
-        async move {
-            let record = self.refresh_task(&request.task_id)?;
-            match (record.task.status, record.result) {
-                (TaskStatus::Completed, Some(result)) => Ok(GetTaskPayloadResult::new(result)),
-                (status, _) => Err(McpError::invalid_params(
-                    format!("task {} is not completed ({status:?})", request.task_id),
-                    None,
-                )),
-            }
+    ) -> Result<GetTaskPayloadResult, McpError> {
+        let record = self.refresh_task(&request.task_id)?;
+        match (record.task.status, record.result) {
+            (TaskStatus::Completed, Some(result)) => Ok(GetTaskPayloadResult::new(result)),
+            (status, _) => Err(McpError::invalid_params(
+                format!("task {} is not completed ({status:?})", request.task_id),
+                None,
+            )),
         }
     }
 
-    fn cancel_task(
+    async fn cancel_task(
         &self,
         request: CancelTaskParams,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> impl Future<Output = Result<CancelTaskResult, McpError>> + Send + '_ {
-        async move { self.cancel_task_record(&request.task_id) }
+    ) -> Result<CancelTaskResult, McpError> {
+        self.cancel_task_record(&request.task_id)
     }
 }
 

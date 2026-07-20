@@ -1,6 +1,6 @@
 [package]
 name = "ascent-review"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -11,6 +11,7 @@ ascent-sim = { path = "../ascent-sim" }
 ascent-aero = { path = "../ascent-aero" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 approx = { workspace = true }

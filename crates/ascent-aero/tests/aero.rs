@@ -6,9 +6,8 @@
 
 use approx::assert_relative_eq;
 use ascent_aero::{
-    fin_set_cn, nose_cn, stability_calibers_at, stability_envelope, total_cp_from_nose_m,
-    BodyTube, Comparator, FinSet, FlightQuantities, NoseCone, NoseShape, PointMass, RulePack,
-    Vehicle,
+    fin_set_cn, nose_cn, stability_calibers_at, stability_envelope, total_cp_from_nose_m, BodyTube,
+    Comparator, FinSet, FlightQuantities, NoseCone, NoseShape, PointMass, RulePack, Vehicle,
 };
 use ascent_domain::Motor;
 
@@ -187,7 +186,8 @@ fn larger_fin_span_moves_cp_aft_and_increases_stability() {
     let mut bigger = v.clone();
     bigger.fins.span_m *= 1.5;
     assert!(
-        total_cp_from_nose_m(&bigger, NoseShape::Ogive) > total_cp_from_nose_m(&v, NoseShape::Ogive)
+        total_cp_from_nose_m(&bigger, NoseShape::Ogive)
+            > total_cp_from_nose_m(&v, NoseShape::Ogive)
     );
     assert!(
         stability_calibers_at(&bigger, NoseShape::Ogive, &motor, 0.0)
@@ -303,8 +303,16 @@ fn irec_2026_rule_pack_loads_with_citations() {
     assert_eq!(rail.comparator, Comparator::Gte);
     // Every extracted rule carries a real document citation with a section.
     for rule in &pack.rules {
-        assert!(rule.citation.contains('§'), "no section in {}", rule.citation);
-        assert!(!rule.citation.contains('?'), "unresolved section in {}", rule.citation);
+        assert!(
+            rule.citation.contains('§'),
+            "no section in {}",
+            rule.citation
+        );
+        assert!(
+            !rule.citation.contains('?'),
+            "unresolved section in {}",
+            rule.citation
+        );
     }
 
     // A vehicle inside all bands passes; stability 12% of length at launch.

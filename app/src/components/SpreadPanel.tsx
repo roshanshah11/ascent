@@ -10,21 +10,16 @@ export function describeRocketPy(rocketpy: RocketPySpread): string {
 export default function SpreadPanel({ spread }: { spread: SpreadResult }) {
   const rocketpy = spread.rocketpy;
   return (
-    <section
-      style={{ marginTop: 16, padding: 12, background: "#161b22", borderRadius: 4, maxWidth: 520 }}
-      aria-label="Cross-validation comparison"
-    >
-      <div style={{ fontSize: 12, color: "#9aa1ab", marginBottom: 6 }}>
-        Cross-validation — side-by-side only, never averaged
-      </div>
-      <div>Ascent native apogee: {spread.native.apogee_m.toFixed(1)} m</div>
+    <section className="spread-panel" aria-label="Cross-validation comparison">
+      <header><span className="panel-eyebrow">Solver comparison</span><h3>Cross-validation</h3><small>Side-by-side only · never averaged</small></header>
+      <div className="spread-metric"><span>Ascent native</span><strong>{spread.native.apogee_m.toFixed(1)} m</strong></div>
       {rocketpy.available && rocketpy.summary && spread.apogee_spread_m !== null ? (
         <>
-          <div>RocketPy apogee: {rocketpy.summary.apogee_m.toFixed(1)} m</div>
-          <div>Apogee delta: {spread.apogee_spread_m.toFixed(1)} m</div>
+          <div className="spread-metric"><span>RocketPy</span><strong>{rocketpy.summary.apogee_m.toFixed(1)} m</strong></div>
+          <div className="spread-metric delta"><span>Apogee delta:</span><strong>{` ${spread.apogee_spread_m.toFixed(1)} m`}</strong></div>
         </>
       ) : (
-        <div style={{ color: "#e8a33d" }}>{describeRocketPy(rocketpy)}</div>
+        <div className="spread-unavailable">{describeRocketPy(rocketpy)}</div>
       )}
     </section>
   );

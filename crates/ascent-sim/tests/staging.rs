@@ -12,11 +12,17 @@ use ascent_sim::{
 };
 
 fn c6() -> Motor {
-    Motor::from_json(include_str!("../../ascent-domain/data/motors/estes_c6.json")).unwrap()
+    Motor::from_json(include_str!(
+        "../../ascent-domain/data/motors/estes_c6.json"
+    ))
+    .unwrap()
 }
 
 fn d12() -> Motor {
-    Motor::from_json(include_str!("../../ascent-domain/data/motors/estes_d12.json")).unwrap()
+    Motor::from_json(include_str!(
+        "../../ascent-domain/data/motors/estes_d12.json"
+    ))
+    .unwrap()
 }
 
 fn vehicle(cg: f64, cp: f64, inertia: f64) -> PlanarVehicle {
@@ -63,6 +69,8 @@ fn recovery() -> Recovery {
     Recovery {
         chute_cd: 0.75,
         chute_area_m2: std::f64::consts::PI * 0.15 * 0.15,
+        drogue: None,
+        main_deploy_altitude_m: None,
     }
 }
 
@@ -91,7 +99,10 @@ fn two_stage_planar_flies_end_to_end_with_separation_events() {
     assert!(sep < ign, "separation before ignition: {kinds:?}");
     // Times are monotonic and the flight lands.
     let times: Vec<f64> = result.events.iter().map(|e| e.t_s).collect();
-    assert!(times.windows(2).all(|w| w[0] <= w[1]), "monotonic: {times:?}");
+    assert!(
+        times.windows(2).all(|w| w[0] <= w[1]),
+        "monotonic: {times:?}"
+    );
     assert!(result.summary.apogee_m > 0.0);
     assert!(result.summary.landing_time_s > result.summary.apogee_time_s);
 }
@@ -135,7 +146,7 @@ fn two_stage_apogee_beats_the_sustainer_alone() {
         &config(),
     );
     let solo = simulate_planar_staged(
-        &two_stages()[1..].to_vec(),
+        &two_stages()[1..],
         Some(recovery()),
         &Environment::default(),
         &WindProfile::calm(),
@@ -225,9 +236,15 @@ fn two_stage_sixdof_flies_end_to_end_with_separation_events() {
     let ign = kinds.iter().position(|k| *k == "StageIgnition").unwrap();
     let burnout = kinds.iter().position(|k| *k == "Burnout").unwrap();
     assert!(burnout < sep && sep < ign, "order: {kinds:?}");
-    assert!(kinds.contains(&"Apogee") && kinds.contains(&"Landing"), "{kinds:?}");
+    assert!(
+        kinds.contains(&"Apogee") && kinds.contains(&"Landing"),
+        "{kinds:?}"
+    );
     let times: Vec<f64> = result.summary.events.iter().map(|e| e.t_s).collect();
-    assert!(times.windows(2).all(|w| w[0] <= w[1]), "monotonic: {times:?}");
+    assert!(
+        times.windows(2).all(|w| w[0] <= w[1]),
+        "monotonic: {times:?}"
+    );
     assert!(result.summary.apogee_m > 0.0);
 }
 
@@ -245,7 +262,7 @@ fn sixdof_staged_apogee_beats_sustainer_alone_and_matches_planar_class() {
     )
     .unwrap();
     let solo = simulate_sixdof_staged(
-        &sixdof_stages()[1..].to_vec(),
+        &sixdof_stages()[1..],
         Some(recovery()),
         &Wind3DProfile::calm(),
         &SixDofLaunch::vertical(),
@@ -263,8 +280,7 @@ fn sixdof_staged_apogee_beats_sustainer_alone_and_matches_planar_class() {
         &WindProfile::calm(),
         &cfg,
     );
-    let rel = (staged.summary.apogee_m - planar.summary.apogee_m).abs()
-        / planar.summary.apogee_m;
+    let rel = (staged.summary.apogee_m - planar.summary.apogee_m).abs() / planar.summary.apogee_m;
     assert!(
         rel < 0.05,
         "6dof {} vs planar {} ({}%)",

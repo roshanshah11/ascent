@@ -1,7 +1,3 @@
-// Post-processing workspace (v0.3 Step 7): a top-level mode, not a
-// footer. All numbers come from core/plots.ts (pure, tested); this file
-// only draws SVG and wires selection. CSV export serializes the exact
-// series being rendered.
 import { useMemo, useState } from "react";
 import {
   dispersionOverlay,
@@ -14,88 +10,55 @@ import {
 } from "../core/plots";
 import type { RunRecord, Study } from "../core/types";
 
-const W = 560;
-const H = 340;
-const PAD = { left: 56, right: 16, top: 16, bottom: 40 };
-const SERIES_COLORS = ["#58a6ff", "#e8a33d", "#3fb950", "#c74b3c", "#b083f0", "#9aa1ab"];
+const WIDTH = 920;
+const HEIGHT = 440;
+const PAD = { left: 62, right: 22, top: 24, bottom: 46 };
+const SERIES_COLORS = ["#68a7d8", "#d5a953", "#70b98a", "#d06a60", "#a58ac4", "#a6abb3"];
 
 function Plot({ plot, scatter }: { plot: PlotData; scatter: boolean }) {
   const bounds = plotBounds(plot);
-  if (!bounds) {
-    return <div style={{ color: "#9aa1ab", fontSize: 12 }}>Nothing to plot yet.</div>;
-  }
-  // A degenerate axis (single x or flat y) still needs nonzero span.
+  if (!bounds) return <div className="results-empty">Nothing to plot yet.</div>;
   const spanX = bounds.maxX - bounds.minX || 1;
   const spanY = bounds.maxY - bounds.minY || 1;
-  const sx = (x: number) =>
-    PAD.left + ((x - bounds.minX) / spanX) * (W - PAD.left - PAD.right);
-  const sy = (y: number) =>
-    H - PAD.bottom - ((y - bounds.minY) / spanY) * (H - PAD.top - PAD.bottom);
+  const x = (value: number) => PAD.left + ((value - bounds.minX) / spanX) * (WIDTH - PAD.left - PAD.right);
+  const y = (value: number) => HEIGHT - PAD.bottom - ((value - bounds.minY) / spanY) * (HEIGHT - PAD.top - PAD.bottom);
   const xTicks = niceTicks(bounds.minX, bounds.maxX);
   const yTicks = niceTicks(bounds.minY, bounds.maxY);
 
   return (
-    <svg width={W} height={H} role="img" aria-label={plot.title}>
-      {xTicks.map((t) => (
-        <g key={`x${t}`}>
-          <line x1={sx(t)} y1={PAD.top} x2={sx(t)} y2={H - PAD.bottom} stroke="#21262d" />
-          <text x={sx(t)} y={H - PAD.bottom + 16} fill="#9aa1ab" fontSize={10} textAnchor="middle">
-            {t}
-          </text>
+    <svg className="results-plot" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={plot.title}>
+      {xTicks.map((tick) => (
+        <g key={`x${tick}`}>
+          <line x1={x(tick)} y1={PAD.top} x2={x(tick)} y2={HEIGHT - PAD.bottom} className="plot-gridline" />
+          <text x={x(tick)} y={HEIGHT - PAD.bottom + 18} textAnchor="middle">{tick}</text>
         </g>
       ))}
-      {yTicks.map((t) => (
-        <g key={`y${t}`}>
-          <line x1={PAD.left} y1={sy(t)} x2={W - PAD.right} y2={sy(t)} stroke="#21262d" />
-          <text x={PAD.left - 6} y={sy(t) + 3} fill="#9aa1ab" fontSize={10} textAnchor="end">
-            {t}
-          </text>
+      {yTicks.map((tick) => (
+        <g key={`y${tick}`}>
+          <line x1={PAD.left} y1={y(tick)} x2={WIDTH - PAD.right} y2={y(tick)} className="plot-gridline" />
+          <text x={PAD.left - 8} y={y(tick) + 3} textAnchor="end">{tick}</text>
         </g>
       ))}
-      <text x={(PAD.left + W - PAD.right) / 2} y={H - 6} fill="#9aa1ab" fontSize={11} textAnchor="middle">
-        {plot.xLabel}
-      </text>
-      <text
-        x={12}
-        y={(PAD.top + H - PAD.bottom) / 2}
-        fill="#9aa1ab"
-        fontSize={11}
-        textAnchor="middle"
-        transform={`rotate(-90 12 ${(PAD.top + H - PAD.bottom) / 2})`}
-      >
-        {plot.yLabel}
-      </text>
-      {plot.series.map((s, i) => {
-        const color = SERIES_COLORS[i % SERIES_COLORS.length];
+      <line x1={PAD.left} y1={HEIGHT - PAD.bottom} x2={WIDTH - PAD.right} y2={HEIGHT - PAD.bottom} className="plot-axis" />
+      <line x1={PAD.left} y1={PAD.top} x2={PAD.left} y2={HEIGHT - PAD.bottom} className="plot-axis" />
+      <text x={(PAD.left + WIDTH - PAD.right) / 2} y={HEIGHT - 8} textAnchor="middle" className="plot-axis-label">{plot.xLabel}</text>
+      <text x="15" y={(PAD.top + HEIGHT - PAD.bottom) / 2} textAnchor="middle" transform={`rotate(-90 15 ${(PAD.top + HEIGHT - PAD.bottom) / 2})`} className="plot-axis-label">{plot.yLabel}</text>
+      {plot.series.map((series, index) => {
+        const color = SERIES_COLORS[index % SERIES_COLORS.length];
         return scatter ? (
-          <g key={s.label}>
-            {s.points.map((p, j) => (
-              <circle key={j} cx={sx(p.x)} cy={sy(p.y)} r={2.5} fill={color} fillOpacity={0.75} />
+          <g key={series.label}>
+            {series.points.map((point, pointIndex) => (
+              <circle key={pointIndex} cx={x(point.x)} cy={y(point.y)} r="3" fill={color} fillOpacity="0.74" stroke="var(--bg-canvas)" strokeWidth="0.8" />
             ))}
           </g>
         ) : (
-          <polyline
-            key={s.label}
-            fill="none"
-            stroke={color}
-            strokeWidth={1.5}
-            points={s.points.map((p) => `${sx(p.x)},${sy(p.y)}`).join(" ")}
-          />
+          <polyline key={series.label} fill="none" stroke={color} strokeWidth="1.6" vectorEffect="non-scaling-stroke" points={series.points.map((point) => `${x(point.x)},${y(point.y)}`).join(" ")} />
         );
       })}
-      {/* Legend */}
-      {plot.series.map((s, i) => (
-        <g key={`legend-${s.label}`}>
-          <rect
-            x={PAD.left + 8}
-            y={PAD.top + 6 + i * 16}
-            width={10}
-            height={10}
-            fill={SERIES_COLORS[i % SERIES_COLORS.length]}
-          />
-          <text x={PAD.left + 22} y={PAD.top + 15 + i * 16} fill="#d8dbe0" fontSize={11}>
-            {s.label}
-          </text>
+      {plot.series.map((series, index) => (
+        <g key={`legend-${series.label}`} transform={`translate(${PAD.left + 10}, ${PAD.top + 11 + index * 18})`}>
+          <rect width="12" height="2" fill={SERIES_COLORS[index % SERIES_COLORS.length]} />
+          <text x="18" y="4" className="plot-legend-label">{series.label}</text>
         </g>
       ))}
     </svg>
@@ -104,40 +67,29 @@ function Plot({ plot, scatter }: { plot: PlotData; scatter: boolean }) {
 
 function downloadCsv(name: string, csv: string) {
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
   URL.revokeObjectURL(url);
 }
 
-export default function ResultsWorkspace({
-  studies,
-  record,
-}: {
-  studies: Study[];
-  record: RunRecord | null;
-}) {
+export default function ResultsWorkspace({ studies, record }: { studies: Study[]; record: RunRecord | null }) {
   const [tab, setTab] = useState<"dispersion" | "trajectory">("dispersion");
-  // Overlay selection: all completed dispersion studies start selected.
   const [deselected, setDeselected] = useState<Set<number>>(new Set());
-  const selectable = studies.filter(
-    (s) => s.kind.kind === "dispersion" && s.results !== undefined,
-  );
-  const selected = selectable.filter((s) => !deselected.has(s.id));
+  const selectable = studies.filter((study) => study.kind.kind === "dispersion" && study.results !== undefined);
+  const selected = selectable.filter((study) => !deselected.has(study.id));
 
   const plot = useMemo(() => {
-    if (tab === "trajectory") {
-      return record ? trajectoryPlot(record) : null;
-    }
+    if (tab === "trajectory") return record ? trajectoryPlot(record) : null;
     return dispersionOverlay(selected);
   }, [tab, record, studies, deselected]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const cards = percentileSummaries(selected);
+  const summaries = percentileSummaries(selected);
 
   const toggle = (id: number) => {
-    setDeselected((prev) => {
-      const next = new Set(prev);
+    setDeselected((previous) => {
+      const next = new Set(previous);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
@@ -145,71 +97,50 @@ export default function ResultsWorkspace({
   };
 
   return (
-    <div style={{ display: "flex", gap: 24 }}>
-      <div>
-        <nav style={{ marginBottom: 8 }}>
-          <button onClick={() => setTab("dispersion")} disabled={tab === "dispersion"}>
-            Dispersion
-          </button>
-          <button
-            onClick={() => setTab("trajectory")}
-            disabled={tab === "trajectory" || !record}
-            title={record ? "" : "Run a simulation first"}
-          >
-            Trajectory
-          </button>
-          {plot && plot.series.length > 0 && (
-            <button
-              style={{ marginLeft: 12 }}
-              onClick={() => downloadCsv(`${plot.title.toLowerCase()}.csv`, toCsv(plot))}
-            >
-              Export CSV
-            </button>
-          )}
-        </nav>
-        {plot ? (
-          <Plot plot={plot} scatter={tab === "dispersion"} />
-        ) : (
-          <div style={{ color: "#9aa1ab", fontSize: 12 }}>Run a simulation to see its trajectory.</div>
-        )}
-      </div>
-
-      <aside style={{ minWidth: 220 }}>
-        <h4 style={{ margin: "4px 0" }}>Studies</h4>
-        {selectable.length === 0 && (
-          <div style={{ color: "#9aa1ab", fontSize: 12 }}>
-            No completed dispersion studies yet — run one from the Design workspace.
-          </div>
-        )}
-        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {selectable.map((s) => (
-            <li key={s.id} style={{ marginBottom: 4 }}>
-              <label style={{ fontSize: 13 }}>
-                <input
-                  type="checkbox"
-                  checked={!deselected.has(s.id)}
-                  onChange={() => toggle(s.id)}
-                />{" "}
-                {s.name}
-              </label>
-            </li>
+    <div className="results-workspace">
+      <aside className="results-browser">
+        <div className="results-browser-heading"><span className="panel-eyebrow">Datasets</span><h2>Result Sources</h2></div>
+        <div className="result-source-group">
+          <span className="result-source-label">Completed studies</span>
+          {selectable.length === 0 && <div className="results-empty compact">No completed dispersion studies yet — run one from the Design workspace.</div>}
+          {selectable.map((study) => (
+            <label className="result-source" key={study.id}>
+              <input type="checkbox" checked={!deselected.has(study.id)} onChange={() => toggle(study.id)} />
+              <span><strong>{study.name}</strong><small>{study.engine} · seed {study.seed}</small></span>
+            </label>
           ))}
-        </ul>
-        {cards.map((c) => (
-          <div
-            key={c.label}
-            style={{
-              border: "1px solid #30363d",
-              borderRadius: 6,
-              padding: "6px 10px",
-              marginTop: 8,
-              fontSize: 12,
-            }}
-          >
-            <strong>{c.label}</strong> · {c.samples} flights
-            <div>apogee p5 / p50 / p95: {c.p5.toFixed(1)} / {c.p50.toFixed(1)} / {c.p95.toFixed(1)} m</div>
-            <div>mean landing range: {c.landingMean.toFixed(1)} m</div>
+        </div>
+      </aside>
+
+      <section className="results-canvas">
+        <header className="results-toolbar">
+          <div>
+            <span className="panel-eyebrow">Post-processing</span>
+            <h2>{tab === "dispersion" ? "Landing dispersion" : "Trajectory history"}</h2>
           </div>
+          <nav className="result-tabs" aria-label="Result plot">
+            <button onClick={() => setTab("dispersion")} disabled={tab === "dispersion"}>Dispersion</button>
+            <button onClick={() => setTab("trajectory")} disabled={tab === "trajectory" || !record} title={record ? "" : "Run a simulation first"}>Trajectory</button>
+          </nav>
+          {plot && plot.series.length > 0 && <button className="button-secondary export-button" onClick={() => downloadCsv(`${plot.title.toLowerCase()}.csv`, toCsv(plot))}>Export CSV</button>}
+        </header>
+        <div className="results-plot-wrap">
+          {plot ? <Plot plot={plot} scatter={tab === "dispersion"} /> : <div className="results-empty">Run a simulation to see its trajectory.</div>}
+        </div>
+      </section>
+
+      <aside className="results-inspector">
+        <div className="results-browser-heading"><span className="panel-eyebrow">Statistics</span><h2>Percentiles</h2></div>
+        {summaries.length === 0 && <div className="results-empty compact">Select a completed study to inspect its statistical envelope.</div>}
+        {summaries.map((summary) => (
+          <section className="result-summary" key={summary.label}>
+            <header><strong>{summary.label}</strong><span>{summary.samples} flights</span></header>
+            <div className="summary-metric"><span>Apogee p5</span><strong>{summary.p5.toFixed(1)} m</strong></div>
+            <div className="summary-metric"><span>Apogee p50</span><strong>{summary.p50.toFixed(1)} m</strong></div>
+            <div className="summary-metric"><span>Apogee p95</span><strong>{summary.p95.toFixed(1)} m</strong></div>
+            <div className="summary-metric"><span>Mean landing</span><strong>{summary.landingMean.toFixed(1)} m</strong></div>
+            <p>apogee p5 / p50 / p95</p>
+          </section>
         ))}
       </aside>
     </div>

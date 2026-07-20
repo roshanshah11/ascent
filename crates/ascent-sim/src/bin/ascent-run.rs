@@ -20,6 +20,8 @@ fn main() {
         recovery: Some(Recovery {
             chute_cd: 0.75,
             chute_area_m2: std::f64::consts::PI * (chute_d / 2.0) * (chute_d / 2.0),
+            drogue: None,
+            main_deploy_altitude_m: None,
         }),
     };
     let env = Environment::default();

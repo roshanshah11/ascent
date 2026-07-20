@@ -52,7 +52,9 @@ pub fn engines() -> Vec<Box<dyn SimEngine>> {
     #[cfg(feature = "bridge-rocketpy")]
     {
         let mut engines: Vec<Box<dyn SimEngine>> = vec![Box::new(NativeEngine)];
-        engines.push(Box::new(crate::rocketpy_bridge::RocketPyEngine::from_environment()));
+        engines.push(Box::new(
+            crate::rocketpy_bridge::RocketPyEngine::from_environment(),
+        ));
         engines
     }
     #[cfg(not(feature = "bridge-rocketpy"))]
@@ -68,8 +70,10 @@ mod tests {
     use crate::AtmosphereModel;
 
     fn reference_flight() -> (Rocket, Motor, Environment) {
-        let motor = Motor::from_json(include_str!("../../ascent-domain/data/motors/estes_c6.json"))
-            .expect("bundled C6 must parse");
+        let motor = Motor::from_json(include_str!(
+            "../../ascent-domain/data/motors/estes_c6.json"
+        ))
+        .expect("bundled C6 must parse");
         let rocket = Rocket {
             name: "Estes Alpha III".into(),
             dry_mass_kg: 0.034,
@@ -80,6 +84,8 @@ mod tests {
             recovery: Some(Recovery {
                 chute_cd: 0.75,
                 chute_area_m2: std::f64::consts::PI * 0.15 * 0.15,
+                drogue: None,
+                main_deploy_altitude_m: None,
             }),
         };
         let env = Environment {

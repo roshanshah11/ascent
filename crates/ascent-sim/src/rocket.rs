@@ -12,12 +12,69 @@ pub struct DragModel {
     pub reference_area_m2: f64,
 }
 
-/// Parachute recovery, deployed at apogee (motor-eject delay modeling
-/// arrives with the Day 4 vehicle model).
+/// Drogue chute for dual-deploy recovery: out at apogee, rides to the
+/// ground alongside the main once it opens.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Drogue {
+    pub cd: f64,
+    pub area_m2: f64,
+}
+
+/// Parachute recovery. Single-deploy (the default): the main opens at
+/// apogee. Dual-deploy: set `main_deploy_altitude_m` — the drogue (if
+/// any) opens at apogee and the main opens descending through that
+/// altitude. Both new fields are serde-defaulted and skipped when absent
+/// so pre-v0.5 documents, journals, and study input hashes are untouched.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Recovery {
     pub chute_cd: f64,
     pub chute_area_m2: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drogue: Option<Drogue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_deploy_altitude_m: Option<f64>,
+}
+
+impl Recovery {
+    /// Convenience for the pervasive single-deploy case (and every
+    /// pre-v0.5 call site).
+    pub fn single(chute_cd: f64, chute_area_m2: f64) -> Self {
+        Self {
+            chute_cd,
+            chute_area_m2,
+            drogue: None,
+            main_deploy_altitude_m: None,
+        }
+    }
+
+    /// True when a main-deploy altitude is configured (dual-deploy).
+    pub fn is_dual_deploy(&self) -> bool {
+        self.main_deploy_altitude_m.is_some()
+    }
+
+    /// Total chute CdA in effect at `altitude_m` during descent. With no
+    /// main-deploy altitude this is the main's CdA everywhere — the exact
+    /// pre-v0.5 expression, so single-deploy flights are byte-identical.
+    /// Dual-deploy: drogue CdA (possibly zero) above the deploy altitude,
+    /// drogue + main at or below it.
+    pub fn descent_cda(&self, altitude_m: f64) -> f64 {
+        let main_cda = self.chute_cd * self.chute_area_m2;
+        match self.main_deploy_altitude_m {
+            None => main_cda,
+            Some(deploy_m) => {
+                let drogue_cda = self
+                    .drogue
+                    .as_ref()
+                    .map(|d| d.cd * d.area_m2)
+                    .unwrap_or(0.0);
+                if altitude_m <= deploy_m {
+                    drogue_cda + main_cda
+                } else {
+                    drogue_cda
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

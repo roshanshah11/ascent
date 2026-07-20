@@ -8,7 +8,7 @@ The vehicle model tree (`crates/ascent-domain/src/vehicle.rs`) is the single sou
 - **Structural parts** — `NoseCone`, `BodyTube`, `Transition` — stack in root-vector order and define the airframe. `stack_length_m` is their length sum.
 - **Attachments** — `FinSet`, `MotorMount`, `Parachute`, `MassComponent` — are children of exactly one structural part, never root-level, never nested further. `position_m` fields are measured from the parent's fore end.
 - **`PartId`** is a stable `u32`, unique per vehicle, never reused — commands and mesh part ranges address parts by it.
-- **Every part carries explicit mass.** The rollup is a sum of declared masses; nothing is inferred from geometry (density models are a later refinement).
+- **Every part carries explicit design mass.** `Part.as_built_mass_g` is an optional measured-hardware override; mass, CG, MOI, and stage rollups prefer it when present, while `kind.mass_g` remains the design value for reconciliation.
 
 ## Part parameters
 
@@ -21,6 +21,8 @@ The vehicle model tree (`crates/ascent-domain/src/vehicle.rs`) is the single sou
 | `MotorMount` | `motor_designation`, `length_m`, `position_m`, `mass_g` |
 | `Parachute` | `diameter_cm`, `cd`, `position_m`, `mass_g` |
 | `MassComponent` | `name`, `position_m`, `mass_g` |
+
+Every `Part` may also carry `as_built_mass_g` (optional, finite, non-negative). It is deliberately a part-level field, so the same journal command applies to every part kind without changing its geometry schema.
 
 ## Mass-property worksheet model
 

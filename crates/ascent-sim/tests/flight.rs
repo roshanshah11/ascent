@@ -22,11 +22,7 @@ fn constant_thrust_motor(thrust_n: f64, burn_s: f64) -> Motor {
         total_mass_kg: 1e-9,
         propellant_mass_kg: 1e-12,
         expected_total_impulse_ns: thrust_n * burn_s,
-        thrust_curve: vec![
-            (1e-9, thrust_n),
-            (burn_s, thrust_n),
-            (burn_s + 1e-9, 0.0),
-        ],
+        thrust_curve: vec![(1e-9, thrust_n), (burn_s, thrust_n), (burn_s + 1e-9, 0.0)],
         provenance: serde_json::Value::Null,
         diameter_mm: 0.0,
         length_mm: 0.0,
@@ -68,6 +64,8 @@ fn alpha_iii() -> Rocket {
         recovery: Some(Recovery {
             chute_cd: 0.75,
             chute_area_m2: std::f64::consts::PI * (chute_d / 2.0) * (chute_d / 2.0),
+            drogue: None,
+            main_deploy_altitude_m: None,
         }),
     }
 }
@@ -189,7 +187,12 @@ fn landing_is_at_ground_level() {
 #[test]
 fn rocket_too_heavy_never_lifts_off() {
     let rocket = dragless_rocket(10.0);
-    let r = simulate_vertical(&rocket, &c6(), &Environment::default(), &SimConfig::default());
+    let r = simulate_vertical(
+        &rocket,
+        &c6(),
+        &Environment::default(),
+        &SimConfig::default(),
+    );
     assert!(r.event(EventKind::Liftoff).is_none());
     assert!(r.apogee_m <= 1e-9);
 }

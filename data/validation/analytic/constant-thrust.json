@@ -1,0 +1,1 @@
+{"model":"constant_mass_vacuum_vertical_flight","inputs":{"burn_time_s":2.0,"dry_mass_kg":0.5,"gravity_ms2":9.80665,"thrust_n":20.0},"closed_form":{"acceleration_ms2":30.19335,"apogee_m":245.10049464474053,"burnout_altitude_m":60.3867,"burnout_velocity_ms":60.3867}}

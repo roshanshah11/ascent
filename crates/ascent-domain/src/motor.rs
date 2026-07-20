@@ -99,8 +99,8 @@ impl Motor {
         const IMPULSE_TOLERANCE: f64 = 0.05;
         let computed = self.total_impulse();
         if self.expected_total_impulse_ns > 0.0 {
-            let rel = (computed - self.expected_total_impulse_ns).abs()
-                / self.expected_total_impulse_ns;
+            let rel =
+                (computed - self.expected_total_impulse_ns).abs() / self.expected_total_impulse_ns;
             if rel > IMPULSE_TOLERANCE {
                 return Err(MotorError::ImpulseMismatch {
                     computed,

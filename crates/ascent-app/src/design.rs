@@ -3,12 +3,12 @@
 use std::sync::{Mutex, OnceLock};
 
 use ascent_domain::{Motor, MotorRegistry};
-use ascent_sim::{
-    simulate_vertical, AtmosphereModel, DragModel, Environment, NativeEngine, Recovery, Rocket,
-    SimConfig, SimEngine, SimSummary,
-};
 #[cfg(feature = "bridge-rocketpy")]
 use ascent_sim::RocketPyEngine;
+use ascent_sim::{
+    simulate_vertical, AtmosphereModel, AtmosphereProfile, DragModel, Environment, NativeEngine,
+    Recovery, Rocket, SimConfig, SimEngine, SimSummary,
+};
 use serde::{Deserialize, Serialize};
 
 /// The app's motor catalog for this process: starts from the bundled
@@ -37,6 +37,19 @@ pub struct ChuteSpec {
     pub enabled: bool,
     pub diameter_cm: f64,
     pub cd: f64,
+    /// Dual-deploy: the main opens descending through this altitude (m
+    /// AGL) instead of at apogee. `None` = single-deploy (main at apogee),
+    /// the pre-v0.5 behavior. Skipped when absent so existing designs
+    /// serialize byte-identically and their study hashes never drift.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_deploy_altitude_m: Option<f64>,
+    /// Drogue canopy diameter (cm) for dual-deploy; the drogue opens at
+    /// apogee and rides down with the main. `None` = no drogue (free
+    /// ballistic descent to the main-deploy altitude).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drogue_diameter_cm: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drogue_cd: Option<f64>,
 }
 
 /// Everything the inspector can edit, in UI-friendly units.
@@ -63,6 +76,9 @@ impl Design {
                 enabled: true,
                 diameter_cm: 30.0,
                 cd: 0.75,
+                main_deploy_altitude_m: None,
+                drogue_diameter_cm: None,
+                drogue_cd: None,
             },
             motor_designation: "C6".into(),
             rail_length_m: 0.9,
@@ -196,6 +212,28 @@ pub fn build_flight(design: &Design) -> Result<(Rocket, Motor, Environment), Str
     if design.diameter_mm <= 0.0 {
         return Err("diameter must be positive".into());
     }
+    if design.chute.enabled {
+        if let Some(deploy_m) = design.chute.main_deploy_altitude_m {
+            if !deploy_m.is_finite() || deploy_m < 0.0 {
+                return Err("main deploy altitude must be finite and non-negative".into());
+            }
+        }
+        match (design.chute.drogue_diameter_cm, design.chute.drogue_cd) {
+            (None, None) => {}
+            (Some(diameter_cm), Some(cd)) => {
+                if design.chute.main_deploy_altitude_m.is_none() {
+                    return Err("a drogue requires a main deploy altitude".into());
+                }
+                if !diameter_cm.is_finite() || diameter_cm <= 0.0 {
+                    return Err("drogue diameter must be finite and positive".into());
+                }
+                if !cd.is_finite() || cd <= 0.0 {
+                    return Err("drogue Cd must be finite and positive".into());
+                }
+            }
+            _ => return Err("drogue diameter and Cd must be set together".into()),
+        }
+    }
     let motor = find_motor(&design.motor_designation)?;
     let radius_m = design.diameter_mm / 1000.0 / 2.0;
     let rocket = Rocket {
@@ -207,9 +245,28 @@ pub fn build_flight(design: &Design) -> Result<(Rocket, Motor, Environment), Str
         }),
         recovery: if design.chute.enabled {
             let chute_r = design.chute.diameter_cm / 100.0 / 2.0;
+            // Drogue rides on the dual-deploy path only: it needs both a
+            // diameter and a Cd, and it's meaningless without a main-deploy
+            // altitude (otherwise the main is already out at apogee).
+            let drogue = match (
+                design.chute.main_deploy_altitude_m,
+                design.chute.drogue_diameter_cm,
+                design.chute.drogue_cd,
+            ) {
+                (Some(_), Some(d_cm), Some(cd)) => {
+                    let r = d_cm / 100.0 / 2.0;
+                    Some(ascent_sim::Drogue {
+                        cd,
+                        area_m2: std::f64::consts::PI * r * r,
+                    })
+                }
+                _ => None,
+            };
             Some(Recovery {
                 chute_cd: design.chute.cd,
                 chute_area_m2: std::f64::consts::PI * chute_r * chute_r,
+                drogue,
+                main_deploy_altitude_m: design.chute.main_deploy_altitude_m,
             })
         } else {
             None
@@ -224,7 +281,17 @@ pub fn build_flight(design: &Design) -> Result<(Rocket, Motor, Environment), Str
 }
 
 pub fn run_design(design: &Design) -> Result<RunRecord, String> {
-    let (rocket, motor, env) = build_flight(design)?;
+    run_design_with_atmosphere(design, None)
+}
+
+pub fn run_design_with_atmosphere(
+    design: &Design,
+    atmosphere: Option<&AtmosphereProfile>,
+) -> Result<RunRecord, String> {
+    let (rocket, motor, mut env) = build_flight(design)?;
+    if let Some(model) = atmosphere.and_then(AtmosphereProfile::atmosphere_model) {
+        env.atmosphere = model;
+    }
     let config = SimConfig::default();
     // The recorded summary comes through the SimEngine seam — the same path
     // future bridge engines use — while playback samples/events come from the
@@ -334,7 +401,117 @@ mod tests {
         assert!(!record.events.is_empty());
         assert!(record.samples.len() <= MAX_PLAYBACK_SAMPLES + 1);
         let last = record.samples.last().unwrap();
-        assert!(last.altitude_m.abs() < 1e-6, "playback must end on the ground");
+        assert!(
+            last.altitude_m.abs() < 1e-6,
+            "playback must end on the ground"
+        );
+    }
+
+    #[test]
+    fn imported_density_profile_changes_the_primary_run_and_its_hash() {
+        let standard = run_design(&Design::reference()).unwrap();
+        let profile = ascent_sim::AtmosphereProfile {
+            name: "thin-air-test".into(),
+            layers: vec![
+                ascent_sim::ProfileLayer {
+                    altitude_m: 0.0,
+                    wind_speed_ms: 0.0,
+                    wind_direction_deg: 0.0,
+                    density_kg_m3: Some(0.2),
+                },
+                ascent_sim::ProfileLayer {
+                    altitude_m: 2_000.0,
+                    wind_speed_ms: 0.0,
+                    wind_direction_deg: 0.0,
+                    density_kg_m3: Some(0.2),
+                },
+            ],
+        };
+
+        let profiled = run_design_with_atmosphere(&Design::reference(), Some(&profile)).unwrap();
+
+        assert!(profiled.summary.apogee_m > standard.summary.apogee_m);
+        assert_ne!(profiled.summary.input_hash, standard.summary.input_hash);
+    }
+
+    #[test]
+    fn single_deploy_chute_serializes_without_the_v05_keys() {
+        // A pre-v0.5-shaped design must round-trip byte-identically, so its
+        // study-input hash never drifts when v0.5 lands.
+        let json = serde_json::to_string(&Design::reference().chute).unwrap();
+        assert!(!json.contains("main_deploy_altitude_m"));
+        assert!(!json.contains("drogue_diameter_cm"));
+        assert!(!json.contains("drogue_cd"));
+        let old = r#"{"enabled":true,"diameter_cm":30.0,"cd":0.75}"#;
+        let spec: ChuteSpec = serde_json::from_str(old).unwrap();
+        assert_eq!(spec, Design::reference().chute);
+    }
+
+    #[test]
+    fn dual_deploy_design_builds_drogue_and_main_deploy_altitude() {
+        let mut design = Design::reference();
+        design.chute.main_deploy_altitude_m = Some(75.0);
+        design.chute.drogue_diameter_cm = Some(8.0);
+        design.chute.drogue_cd = Some(0.8);
+        let (rocket, _, _) = build_flight(&design).unwrap();
+        let recovery = rocket.recovery.expect("chute enabled");
+        assert_eq!(recovery.main_deploy_altitude_m, Some(75.0));
+        let drogue = recovery.drogue.expect("drogue configured");
+        let expected_area = std::f64::consts::PI * 0.04 * 0.04;
+        assert!((drogue.area_m2 - expected_area).abs() < 1e-12);
+        assert_eq!(drogue.cd, 0.8);
+    }
+
+    #[test]
+    fn main_deploy_altitude_without_drogue_is_ballistic_then_main() {
+        // A main-deploy altitude but no drogue: free descent to the deploy
+        // altitude, then the main. build_flight must not fabricate a drogue.
+        let mut design = Design::reference();
+        design.chute.main_deploy_altitude_m = Some(100.0);
+        let (rocket, _, _) = build_flight(&design).unwrap();
+        let recovery = rocket.recovery.unwrap();
+        assert_eq!(recovery.main_deploy_altitude_m, Some(100.0));
+        assert!(recovery.drogue.is_none());
+    }
+
+    #[test]
+    fn invalid_dual_deploy_configuration_is_rejected_at_the_design_boundary() {
+        let mut partial = Design::reference();
+        partial.chute.main_deploy_altitude_m = Some(60.0);
+        partial.chute.drogue_diameter_cm = Some(8.0);
+        assert!(build_flight(&partial)
+            .unwrap_err()
+            .contains("drogue diameter and Cd must be set together"));
+
+        let mut negative_altitude = Design::reference();
+        negative_altitude.chute.main_deploy_altitude_m = Some(-1.0);
+        assert!(build_flight(&negative_altitude)
+            .unwrap_err()
+            .contains("main deploy altitude"));
+
+        let mut drogue_without_dual = Design::reference();
+        drogue_without_dual.chute.drogue_diameter_cm = Some(8.0);
+        drogue_without_dual.chute.drogue_cd = Some(0.8);
+        assert!(build_flight(&drogue_without_dual)
+            .unwrap_err()
+            .contains("requires a main deploy altitude"));
+    }
+
+    #[test]
+    fn dual_deploy_lands_faster_than_single_deploy() {
+        let single = run_design(&Design::reference()).unwrap();
+        let mut design = Design::reference();
+        design.chute.main_deploy_altitude_m = Some(60.0);
+        design.chute.drogue_diameter_cm = Some(8.0);
+        design.chute.drogue_cd = Some(0.8);
+        let dual = run_design(&design).unwrap();
+        assert!(
+            dual.summary.landing_time_s < single.summary.landing_time_s,
+            "dual-deploy {} s must land sooner than single {} s",
+            dual.summary.landing_time_s,
+            single.summary.landing_time_s
+        );
+        assert!(dual.events.iter().any(|e| e.kind == "MainDeploy"));
     }
 
     #[test]
@@ -356,7 +533,12 @@ mod tests {
         assert!(spread.native.apogee_m > 350.0);
         assert!(!spread.rocketpy.available);
         assert!(spread.rocketpy.summary.is_none());
-        assert!(spread.rocketpy.reason.as_deref().unwrap_or_default().contains("not compiled"));
+        assert!(spread
+            .rocketpy
+            .reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("not compiled"));
         assert!(spread.apogee_spread_m.is_none());
     }
 
@@ -398,7 +580,10 @@ mod tests {
         let mut design = Design::reference();
         design.motor_designation = "D10".into();
         let record = run_design(&design).unwrap();
-        assert!(record.summary.apogee_m > 50.0, "imported D10 should lift off");
+        assert!(
+            record.summary.apogee_m > 50.0,
+            "imported D10 should lift off"
+        );
         assert_eq!(record.summary.input_hash.len(), 64);
 
         let ev = crate::evidence::evidence_for(&design).unwrap();
@@ -416,7 +601,10 @@ mod tests {
             let mut d = Design::reference();
             d.motor_designation = designation.into();
             let record = run_design(&d).unwrap();
-            assert!(record.summary.apogee_m > 50.0, "{designation} should lift off");
+            assert!(
+                record.summary.apogee_m > 50.0,
+                "{designation} should lift off"
+            );
         }
     }
 }

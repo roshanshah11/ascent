@@ -1,0 +1,254 @@
+name: Verifiable native release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RUST_VERSION: "1.97.0"
+  NODE_VERSION: "22.14.0"
+  TAURI_CLI_VERSION: "2.8.4"
+  CARGO_CYCLONEDX_VERSION: "0.5.7"
+
+jobs:
+  verify-source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@1e60f620b9541dca151540d0c40b4acee1f1ea66 # v4.0.4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install pinned Rust
+        run: rustup toolchain install "$RUST_VERSION" --profile minimal --component rustfmt && rustup default "$RUST_VERSION"
+      - run: npm ci
+        working-directory: app
+      - name: Full deterministic gate
+        run: cargo xtask test
+      - name: Version agreement
+        run: scripts/verify-release-metadata.sh
+
+  unsigned-payload:
+    needs: verify-source
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: macos
+            bundles: app,dmg
+          - os: windows-2022
+            platform: windows
+            bundles: nsis
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@1e60f620b9541dca151540d0c40b4acee1f1ea66 # v4.0.4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install pinned Rust and release tools
+        shell: bash
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+          cargo install tauri-cli --version "$TAURI_CLI_VERSION" --locked
+          cargo install cargo-cyclonedx --version "$CARGO_CYCLONEDX_VERSION" --locked
+      - run: npm ci
+        working-directory: app
+      - name: Build unsigned native payload
+        run: cargo tauri build --bundles "${{ matrix.bundles }}"
+        working-directory: crates/ascent-app
+      - name: Generate CycloneDX SBOM
+        run: cargo cyclonedx --format json --all
+      - name: Record unsigned inputs and checksums
+        shell: bash
+        run: |
+          mkdir -p release-evidence
+          cargo run -p ascent-app --release --bin ascent-cli -- create-review-bundle release-evidence/golden-v06.ascent-review
+          cargo run -p ascent-app --release --bin ascent-cli -- verify-review-bundle release-evidence/golden-v06.ascent-review
+          scripts/package-release-evidence.sh "${{ matrix.platform }}" release-evidence
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: unsigned-${{ matrix.platform }}-${{ github.sha }}
+          path: |
+            target/release/bundle
+            release-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  sign-macos:
+    if: startsWith(github.ref, 'refs/tags/v') && github.repository == 'roshanshah11/ascent'
+    needs: unsigned-payload
+    runs-on: macos-14
+    environment: release-macos
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with: { name: "unsigned-macos-${{ github.sha }}", path: payload }
+      - name: Import protected Developer ID
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: scripts/import-apple-certificate.sh
+      - name: Sign, notarize, staple, and verify
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: scripts/sign-macos-release.sh payload
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.2.0
+        with: { subject-path: "payload/signed/*" }
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with: { name: "signed-macos-${{ github.sha }}", path: "payload/signed" }
+
+  sign-windows:
+    if: startsWith(github.ref, 'refs/tags/v') && github.repository == 'roshanshah11/ascent'
+    needs: unsigned-payload
+    runs-on: windows-2022
+    environment: release-windows
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with: { name: "unsigned-windows-${{ github.sha }}", path: payload }
+      - name: Authenticode sign, timestamp, updater-sign, and verify
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_PFX: ${{ secrets.WINDOWS_CERTIFICATE_PFX }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: scripts/sign-windows-release.ps1 payload
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.2.0
+        with: { subject-path: "payload/signed/*" }
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with: { name: "signed-windows-${{ github.sha }}", path: "payload/signed" }
+
+  smoke-macos:
+    needs: sign-macos
+    runs-on: macos-14
+    steps:
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with: { name: "signed-macos-${{ github.sha }}", path: signed }
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with: { name: "unsigned-macos-${{ github.sha }}", path: evidence }
+      - name: Verify, install, launch, and open golden review bundle offline
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          (cd signed && shasum -a 256 -c SHA256SUMS.macos)
+          previous=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')
+          if [ -n "$previous" ]; then
+            mkdir previous
+            gh release download "$previous" --pattern 'Ascent-macos.dmg' --dir previous
+            hdiutil attach previous/Ascent-macos.dmg -nobrowse -mountpoint "$RUNNER_TEMP/ascent-previous"
+            ditto "$RUNNER_TEMP/ascent-previous/Ascent.app" "$RUNNER_TEMP/Ascent.app"
+            hdiutil detach "$RUNNER_TEMP/ascent-previous"
+            previous_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$RUNNER_TEMP/Ascent.app/Contents/Info.plist")
+          fi
+          spctl --assess --type open --context context:primary-signature signed/Ascent-macos.dmg
+          hdiutil attach signed/Ascent-macos.dmg -nobrowse -mountpoint "$RUNNER_TEMP/ascent-dmg"
+          ditto "$RUNNER_TEMP/ascent-dmg/Ascent.app" "$RUNNER_TEMP/Ascent.app"
+          hdiutil detach "$RUNNER_TEMP/ascent-dmg"
+          current_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$RUNNER_TEMP/Ascent.app/Contents/Info.plist")
+          test "$current_version" = "${GITHUB_REF_NAME#v}"
+          if [ -n "${previous_version:-}" ]; then test "$previous_version" != "$current_version"; fi
+          codesign --verify --deep --strict "$RUNNER_TEMP/Ascent.app"
+          xcrun stapler validate "$RUNNER_TEMP/Ascent.app"
+          networksetup -setairportpower en0 off || true
+          open "$RUNNER_TEMP/Ascent.app" --args "$PWD/evidence/release-evidence/golden-v06.ascent-review"
+          for _ in {1..20}; do pgrep -x Ascent && exit 0; sleep 1; done
+          exit 1
+
+  smoke-windows:
+    needs: sign-windows
+    runs-on: windows-2022
+    steps:
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with: { name: "signed-windows-${{ github.sha }}", path: signed }
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with: { name: "unsigned-windows-${{ github.sha }}", path: evidence }
+      - name: Verify, install, launch, and open golden review bundle offline
+        shell: pwsh
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          $previous = gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty'
+          if ($previous) {
+            New-Item -ItemType Directory -Force previous | Out-Null
+            gh release download $previous --pattern "Ascent-windows.exe" --dir previous
+            $old = Get-Item previous/Ascent-windows.exe
+            Start-Process $old.FullName -ArgumentList "/S" -Wait
+            $oldApp = Get-ChildItem "$env:LOCALAPPDATA","$env:ProgramFiles" -Recurse -Filter Ascent.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $oldApp) { throw "previous Ascent.exe not found after install" }
+            $previousVersion = $oldApp.VersionInfo.ProductVersion
+          }
+          $installer = Get-ChildItem signed -File | Where-Object { $_.Extension -in ".exe", ".msi" } | Select-Object -First 1
+          if (-not $installer) { throw "signed installer missing" }
+          & signtool verify /pa /all $installer.FullName
+          if ($installer.Extension -eq ".msi") {
+            Start-Process msiexec.exe -ArgumentList "/i `"$($installer.FullName)`" /qn" -Wait
+          } else {
+            Start-Process $installer.FullName -ArgumentList "/S" -Wait
+          }
+          $app = Get-ChildItem "$env:LOCALAPPDATA","$env:ProgramFiles" -Recurse -Filter Ascent.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $app) { throw "installed Ascent.exe not found" }
+          $currentVersion = $app.VersionInfo.ProductVersion
+          $expectedVersion = "${{ github.ref_name }}".TrimStart("v")
+          if ($currentVersion -notlike "$expectedVersion*") { throw "installed version $currentVersion does not match tag" }
+          if ($previousVersion -and $previousVersion -eq $currentVersion) { throw "update smoke did not change version" }
+          & signtool verify /pa /all $app.FullName
+          $bundle = (Resolve-Path "evidence/release-evidence/golden-v06.ascent-review").Path
+          $process = Start-Process $app.FullName -ArgumentList "`"$bundle`"" -PassThru
+          Start-Sleep -Seconds 8
+          if ($process.HasExited) { throw "Ascent exited while opening golden review bundle" }
+          Stop-Process -Id $process.Id
+
+  publish-release:
+    needs: [smoke-macos, smoke-windows]
+    runs-on: ubuntu-24.04
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with: { name: "signed-macos-${{ github.sha }}", path: release/macos }
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with: { name: "signed-windows-${{ github.sha }}", path: release/windows }
+      - name: Normalize stable release asset names
+        shell: bash
+        run: |
+          windows=$(find release/windows -maxdepth 1 -type f \( -name '*.exe' -o -name '*.msi' \) -print -quit)
+          test -n "$windows"
+          cp "$windows" release/Ascent-windows.exe
+          cp release/macos/Ascent-macos.dmg release/Ascent-macos.dmg
+          cp release/macos/Ascent-macos.zip release/Ascent-macos-update.zip
+          cp release/macos/Ascent-macos.zip.sig release/Ascent-macos-update.zip.sig
+          cp release/windows/"$(basename "$windows")".sig release/Ascent-windows.exe.sig
+          cp release/macos/SHA256SUMS.macos release/SHA256SUMS.macos
+          cp release/windows/SHA256SUMS.windows release/SHA256SUMS.windows
+          cp release/macos/VERIFY_RELEASE.md release/VERIFY_RELEASE.md
+          cp release/macos/golden-v06.ascent-review release/golden-v06.ascent-review
+          sbom=$(find release/macos -maxdepth 1 -name '*.cdx.json' -print -quit)
+          test -n "$sbom"
+          cp "$sbom" release/ascent.cdx.json
+          (cd release && sha256sum Ascent-macos.dmg Ascent-macos-update.zip Ascent-macos-update.zip.sig Ascent-windows.exe Ascent-windows.exe.sig VERIFY_RELEASE.md golden-v06.ascent-review ascent.cdx.json > SHA256SUMS)
+      - name: Create release and publish verified assets
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --verify-tag --title "Ascent $GITHUB_REF_NAME" --notes "See VERIFY_RELEASE.md in the attached artifacts."
+          gh release upload "$GITHUB_REF_NAME" release/Ascent-macos.dmg release/Ascent-macos-update.zip release/Ascent-macos-update.zip.sig release/Ascent-windows.exe release/Ascent-windows.exe.sig release/SHA256SUMS release/SHA256SUMS.macos release/SHA256SUMS.windows release/VERIFY_RELEASE.md release/golden-v06.ascent-review release/ascent.cdx.json --clobber

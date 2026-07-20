@@ -1,11 +1,9 @@
 //! Flight-rules constraint checks.
 //!
-//! Rules load from a rule-pack JSON (`data/rules/irec-2026.json`, produced
-//! with per-rule citations — Codex task A1). Until that pack lands, a
-//! built-in default set carries the values stated in the build plan
-//! (docs/FULL_BUILD_RESEARCH.md §step-4), each marked with its provisional
-//! source so no number floats free. Same schema either way: when the cited
-//! pack arrives it replaces the defaults with zero code changes.
+//! Requirements load from versioned rule-pack JSON. The bundled
+//! `data/rules/irec-2026.json` is one optional, source-cited profile used as a
+//! regression fixture; it is not the application's identity. Built-in values
+//! keep the engine usable without a selected external profile.
 
 use serde::{Deserialize, Serialize};
 
@@ -62,9 +60,9 @@ impl RulePack {
         serde_json::from_str(json)
     }
 
-    /// Plan-stated defaults, used until the cited IREC 2026 pack lands.
+    /// Generic engineering defaults for callers that do not load a profile.
     pub fn builtin_defaults() -> Self {
-        let src = "docs/FULL_BUILD_RESEARCH.md#step-4 (provisional; replace with cited IREC 2026 pack, Codex task A1)";
+        let src = "built-in engineering default; load a source-cited requirements profile for formal verification";
         RulePack {
             name: "builtin-defaults".into(),
             rules: vec![
@@ -99,8 +97,8 @@ impl RulePack {
         }
     }
 
-    /// Load the evaluable subset of the cited IREC 2026 rule pack
-    /// (data/rules/irec-2026.json, Codex task A1). That pack's schema is
+    /// Load the evaluable subset of the optional, cited IREC 2026 profile.
+    /// That pack's schema is
     /// richer than this engine (structured values, applicability categories,
     /// citation objects); this extracts only rules v0.1 can measure, mapped
     /// by explicit rule id, with the citation flattened to one line.
@@ -109,11 +107,23 @@ impl RulePack {
         let raw: serde_json::Value = serde_json::from_str(json)?;
         // rule id -> quantity name this engine measures
         let id_map: &[(&str, &str)] = &[
-            ("irec-2026-rail-departure-velocity-minimum", "rail_exit_velocity_ms"),
+            (
+                "irec-2026-rail-departure-velocity-minimum",
+                "rail_exit_velocity_ms",
+            ),
             ("irec-2026-fin-span-minimum", "fin_span_calibers"),
-            ("irec-2026-stability-minimum-subsonic", "stability_pct_len_min"),
-            ("irec-2026-stability-maximum-at-launch", "stability_pct_len_at_launch"),
-            ("irec-2026-stability-maximum-through-flight", "stability_pct_len_max"),
+            (
+                "irec-2026-stability-minimum-subsonic",
+                "stability_pct_len_min",
+            ),
+            (
+                "irec-2026-stability-maximum-at-launch",
+                "stability_pct_len_at_launch",
+            ),
+            (
+                "irec-2026-stability-maximum-through-flight",
+                "stability_pct_len_max",
+            ),
         ];
         let mut rules = Vec::new();
         for rule in raw["rules"].as_array().into_iter().flatten() {

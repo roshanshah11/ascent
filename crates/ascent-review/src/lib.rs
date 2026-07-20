@@ -21,6 +21,12 @@ use ascent_sim::{
 };
 use serde::{Deserialize, Serialize};
 
+pub mod alignment;
+pub mod reconciliation;
+pub mod structural;
+pub mod validation;
+use structural::{evaluate_structural, FinMaterial, StructuralCheck, StructuralInputs};
+
 pub const BALLAST_NAME: &str = "solver ballast";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +43,28 @@ pub struct ReviewDesign {
     pub chute: Option<ChuteConfig>,
     pub rail_length_m: f64,
     pub motor_designation: String,
+    /// Measured or specified fin sheet thickness for the flutter screen.
+    pub fin_thickness_m: f64,
+    #[serde(default)]
+    pub structural: StructuralConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructuralConfig {
+    pub fin_material: FinMaterial,
+    pub airframe_thrust_rating_n: f64,
+}
+
+impl Default for StructuralConfig {
+    fn default() -> Self {
+        Self {
+            fin_material: FinMaterial {
+                name: "G10 fiberglass (nominal)".into(),
+                elastic_modulus_pa: 20.0e9,
+            },
+            airframe_thrust_rating_n: 100.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +73,7 @@ pub struct Review {
     pub rail_exit_velocity_ms: f64,
     pub quantities: FlightQuantities,
     pub checks: Vec<ascent_aero::CheckResult>,
+    pub structural_checks: Vec<StructuralCheck>,
     pub feasible: bool,
 }
 
@@ -60,6 +89,8 @@ fn to_rocket(design: &ReviewDesign) -> Rocket {
         recovery: design.chute.as_ref().map(|c| Recovery {
             chute_cd: c.cd,
             chute_area_m2: c.area_m2,
+            drogue: None,
+            main_deploy_altitude_m: None,
         }),
     }
 }
@@ -104,12 +135,28 @@ pub fn evaluate(design: &ReviewDesign, motor: &Motor, rules: &RulePack) -> Revie
     let result = fly(design, motor);
     let quantities = measure(design, motor, &result);
     let checks = rules.check(&quantities);
-    let feasible = checks.iter().all(|c| c.pass);
+    let structural_checks = evaluate_structural(&StructuralInputs {
+        fin_span_m: design.vehicle.fins.span_m,
+        fin_root_chord_m: design.vehicle.fins.root_chord_m,
+        fin_thickness_m: design.fin_thickness_m,
+        fin_material: design.structural.fin_material.clone(),
+        air_density_kg_m3: 1.225,
+        predicted_max_velocity_ms: result.max_velocity_ms,
+        max_motor_thrust_n: motor
+            .thrust_curve
+            .iter()
+            .map(|(_, thrust)| *thrust)
+            .fold(0.0, f64::max),
+        airframe_thrust_rating_n: design.structural.airframe_thrust_rating_n,
+        rail_exit_velocity_ms: result.rail_exit_velocity_ms,
+    });
+    let feasible = checks.iter().all(|c| c.pass) && structural_checks.iter().all(|c| c.pass);
     Review {
         apogee_m: result.apogee_m,
         rail_exit_velocity_ms: result.rail_exit_velocity_ms,
         quantities,
         checks,
+        structural_checks,
         feasible,
     }
 }
@@ -224,7 +271,11 @@ pub fn solve(
                 .filter(|c| !c.pass)
                 .map(|c| c.rule_id.as_str())
                 .collect();
-            reasons.push(format!("{}: violates {}", motor.designation, failed.join(", ")));
+            reasons.push(format!(
+                "{}: violates {}",
+                motor.designation,
+                failed.join(", ")
+            ));
             continue;
         }
 

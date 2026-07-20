@@ -8,7 +8,9 @@
 //! exact tangent-ogive expression. Tolerances below bound exactly those two
 //! known differences — anything looser is a real regression.
 
-use ascent_aero::{fin_set_cn, nose_cn, total_cp_from_nose_m, BodyTube, FinSet, NoseCone, NoseShape, Vehicle};
+use ascent_aero::{
+    fin_set_cn, nose_cn, total_cp_from_nose_m, BodyTube, FinSet, NoseCone, NoseShape, Vehicle,
+};
 use serde_json::Value;
 
 const FIXTURE: &str = include_str!("../../../data/fixtures/alpha3_stability.json");
@@ -116,7 +118,10 @@ fn nose_cp_within_ogive_approximation_of_fixture() {
         .unwrap()["cp_x_from_nose_m"]
         .as_f64()
         .unwrap();
-    let ours = nose_cn(NoseShape::Ogive, f(&fixture(), &["geometry", "nose", "length_m"]));
+    let ours = nose_cn(
+        NoseShape::Ogive,
+        f(&fixture(), &["geometry", "nose", "length_m"]),
+    );
     // 0.466·L vs exact tangent-ogive volume expression: ~0.8% apart.
     assert!(
         rel_err(ours.cp_from_nose_m, expected) < 0.015,
@@ -141,6 +146,9 @@ fn total_cp_within_half_percent_of_fixture() {
         rel_err(ours, expected) * 100.0
     );
     // And against OpenRocket's own discretized implementation value.
-    let or_impl = f(&fx, &["totals", "openrocket_implementation_cross_check_cp_x_m"]);
+    let or_impl = f(
+        &fx,
+        &["totals", "openrocket_implementation_cross_check_cp_x_m"],
+    );
     assert!(rel_err(ours, or_impl) < 0.005);
 }

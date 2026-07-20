@@ -5,6 +5,30 @@ export interface ChuteSpec {
   enabled: boolean;
   diameter_cm: number;
   cd: number;
+  main_deploy_altitude_m?: number | null;
+  drogue_diameter_cm?: number | null;
+  drogue_cd?: number | null;
+}
+
+export interface ProfileLayer {
+  altitude_m: number;
+  wind_speed_ms: number;
+  wind_direction_deg: number;
+  density_kg_m3?: number;
+}
+
+export interface AtmosphereProfile {
+  name: string;
+  layers: ProfileLayer[];
+}
+
+/** Versioned immutable telemetry evidence; channel details remain schema-driven. */
+export interface TelemetryBundle {
+  schema_version: number;
+  bundle_id: string;
+  raw_sources: unknown[];
+  streams: unknown[];
+  [key: string]: unknown;
 }
 
 export interface Design {
@@ -54,6 +78,10 @@ export interface DocumentState {
   vehicle: Vehicle;
   design: Design;
   studies: Study[];
+  atmosphere?: AtmosphereProfile;
+  telemetry?: TelemetryBundle[];
+  alignment?: Record<string, unknown>;
+  reconciliation?: Record<string, unknown>;
   can_undo: boolean;
   can_redo: boolean;
 }
@@ -67,6 +95,78 @@ export interface VehicleMarkers {
   diameter_m: number;
   stability_ignition_cal: number;
   stability_burnout_cal: number;
+}
+
+export interface PartPreview {
+  markers: VehicleMarkers;
+  apogee_m: number;
+}
+
+export interface CommandCheck {
+  index: number;
+  text: string;
+  error: string | null;
+}
+
+export interface ProposalDiff {
+  vehicle_changed: boolean;
+  design_changed: boolean;
+  atmosphere_changed: boolean;
+  parts_added: number;
+  parts_removed: number;
+  studies_added: number;
+  studies_removed: number;
+  studies_made_stale: number[];
+}
+
+export interface CommandProposal {
+  valid: boolean;
+  commands: CommandCheck[];
+  diff: ProposalDiff | null;
+}
+
+export interface CounterfactualReview {
+  proposal: CommandProposal;
+  baseline_document_hash: string;
+  proposed_document_hash: string;
+  parent_hashes: string[];
+  baseline_run: RunRecord;
+  proposed_run: RunRecord;
+  baseline_state: DocumentState;
+  proposed_state: DocumentState;
+  baseline_markers: VehicleMarkers;
+  proposed_markers: VehicleMarkers;
+  baseline_trace: FlightTrace;
+  proposed_trace: FlightTrace;
+  measured_trace: FlightTrace | null;
+  baseline_evidence: EvidenceReport;
+  proposed_evidence: EvidenceReport;
+  baseline_review: ReviewReport;
+  proposed_review: ReviewReport;
+  baseline_reconciliation: ReconciliationResult | null;
+  proposed_reconciliation: ReconciliationResult | null;
+  qualifications: string[];
+  baseline_report_html: string;
+  report_preview_html: string;
+}
+
+export interface FlightTrace {
+  trace_id: string;
+  channels: Array<{
+    id: string;
+    kind: string;
+    samples: Array<{ time: number; values: number[]; valid: boolean }>;
+  }>;
+}
+
+export interface ReconciliationResult {
+  channels: Array<{
+    quantity: string;
+    whole_flight: { bias: number; mae: number; rmse: number; max_absolute: number };
+    completeness: number;
+    residuals?: Array<{ review_time_s: number; value: number }>;
+  }>;
+  qualifications: string[];
 }
 
 /** Payloads of the "job-progress" / "job-done" Tauri events. */
@@ -88,6 +188,7 @@ export interface JobDoneEvent {
 
 /** Mirrors the serde tag layout of crates/ascent-app/src/command.rs. */
 export type Command =
+  | { cmd: "batch"; commands: Command[] }
   | { cmd: "add_part"; parent: number | null; kind: { type: string } & Record<string, unknown> }
   | { cmd: "remove_part"; id: number }
   | { cmd: "set_part_param"; id: number; param: string; value: unknown }
@@ -96,7 +197,11 @@ export type Command =
   | { cmd: "set_design"; design: Design }
   | { cmd: "create_study"; name: string; kind: StudyKind; engine: string; seed: number }
   | { cmd: "delete_study"; id: number }
-  | { cmd: "set_study_param"; id: number; param: string; value: unknown };
+  | { cmd: "set_study_param"; id: number; param: string; value: unknown }
+  | { cmd: "set_atmosphere"; profile: AtmosphereProfile | null }
+  | { cmd: "set_telemetry"; bundles: TelemetryBundle[] }
+  | { cmd: "set_alignment"; alignment: Record<string, unknown> | null }
+  | { cmd: "set_reconciliation"; reconciliation: Record<string, unknown> | null };
 
 export interface MotorInfo {
   designation: string;
@@ -193,7 +298,20 @@ export interface EvidenceReport {
   };
   convergence: ConvergenceInfo;
   validation: string;
+  validation_cases: Array<{
+    case_id: string;
+    title: string;
+    evidence_level: "analytic" | "unit_verified" | "regression_compatible" | "cross_validated" | "flight_validated";
+    intended_use: string;
+    validity_domain: string[];
+    caveats: string[];
+    known_mismatches: string[];
+    case_hash: string;
+  }>;
   credibility: Scorecard;
+  study?: { id: number; result_input_hash: string; current_input_hash: string; is_stale: boolean };
+  links: Array<{ relation: string; from_hash: string; to_hash: string }>;
+  structural_checks: StructuralCheck[];
 }
 
 export interface RuleCheck {
@@ -206,10 +324,23 @@ export interface RuleCheck {
   pass: boolean;
 }
 
+/** Mirrors ascent_review::structural::StructuralCheck. */
+export interface StructuralCheck {
+  check_id: string;
+  label: string;
+  value: number;
+  limit: number;
+  margin: number;
+  units: string;
+  pass: boolean;
+  source: string;
+}
+
 export interface ReviewData {
   apogee_m: number;
   rail_exit_velocity_ms: number;
   checks: RuleCheck[];
+  structural_checks: StructuralCheck[];
   feasible: boolean;
 }
 

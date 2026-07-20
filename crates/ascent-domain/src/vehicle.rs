@@ -129,8 +129,18 @@ impl PartKind {
 pub struct Part {
     pub id: PartId,
     pub kind: PartKind,
+    /// Measured hardware mass. When set, mass and CG rollups prefer this
+    /// value while retaining the design mass in `kind` for reconciliation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub as_built_mass_g: Option<f64>,
     #[serde(default)]
     pub children: Vec<Part>,
+}
+
+impl Part {
+    pub fn effective_mass_g(&self) -> f64 {
+        self.as_built_mass_g.unwrap_or_else(|| self.kind.mass_g())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -150,7 +160,10 @@ pub struct MassProperties {
 impl Vehicle {
     /// Airframe length: the structural stack, nose tip to aft end.
     pub fn stack_length_m(&self) -> f64 {
-        self.parts.iter().map(|p| p.kind.structural_length_m()).sum()
+        self.parts
+            .iter()
+            .map(|p| p.kind.structural_length_m())
+            .sum()
     }
 
     /// Tree invariants: root parts structural, attachments only as
@@ -271,7 +284,7 @@ pub struct StageInfo {
 }
 
 fn subtree_mass_g(part: &Part) -> f64 {
-    part.kind.mass_g() + part.children.iter().map(subtree_mass_g).sum::<f64>()
+    part.effective_mass_g() + part.children.iter().map(subtree_mass_g).sum::<f64>()
 }
 
 fn find_motor_mount(part: &Part, found: &mut Option<String>) {
@@ -292,7 +305,11 @@ fn validate_part(part: &Part, seen: &mut std::collections::BTreeSet<u32>) -> Res
     if !seen.insert(part.id.0) {
         return Err(format!("duplicate part id {}", part.id.0));
     }
-    if part.kind.mass_g() < 0.0 {
+    if part.kind.mass_g() < 0.0
+        || part
+            .as_built_mass_g
+            .is_some_and(|mass| !mass.is_finite() || mass < 0.0)
+    {
         return Err(format!("part {} has negative mass", part.id.0));
     }
     for child in &part.children {
@@ -323,7 +340,7 @@ fn collect_mass_items(
     parent_length_m: f64,
     items: &mut Vec<(f64, f64, f64)>,
 ) {
-    let mass_kg = part.kind.mass_g() / 1000.0;
+    let mass_kg = part.effective_mass_g() / 1000.0;
     match &part.kind {
         PartKind::NoseCone { length_m, .. } => {
             items.push((
@@ -381,6 +398,7 @@ pub fn reference_vehicle() -> Vehicle {
         parts: vec![
             Part {
                 id: PartId(1),
+                as_built_mass_g: None,
                 kind: PartKind::NoseCone {
                     shape: NoseShape::TangentOgive,
                     length_m: 0.075,
@@ -391,6 +409,7 @@ pub fn reference_vehicle() -> Vehicle {
             },
             Part {
                 id: PartId(2),
+                as_built_mass_g: None,
                 kind: PartKind::BodyTube {
                     length_m: 0.225,
                     outer_radius_m: 0.0125,
@@ -400,6 +419,7 @@ pub fn reference_vehicle() -> Vehicle {
                 children: vec![
                     Part {
                         id: PartId(3),
+                        as_built_mass_g: None,
                         kind: PartKind::FinSet {
                             count: 3,
                             root_chord_m: 0.05,
@@ -413,6 +433,7 @@ pub fn reference_vehicle() -> Vehicle {
                     },
                     Part {
                         id: PartId(4),
+                        as_built_mass_g: None,
                         kind: PartKind::Parachute {
                             diameter_cm: 30.0,
                             cd: 0.75,
@@ -423,6 +444,7 @@ pub fn reference_vehicle() -> Vehicle {
                     },
                     Part {
                         id: PartId(5),
+                        as_built_mass_g: None,
                         kind: PartKind::MotorMount {
                             motor_designation: "C6".into(),
                             length_m: 0.07,
@@ -446,6 +468,7 @@ pub fn two_stage_reference_vehicle() -> Vehicle {
     v.name = "Estes Alpha III · D12 booster".into();
     v.parts.push(Part {
         id: PartId(6),
+        as_built_mass_g: None,
         kind: PartKind::StageCoupler {
             length_m: 0.02,
             outer_radius_m: 0.0125,
@@ -456,6 +479,7 @@ pub fn two_stage_reference_vehicle() -> Vehicle {
     });
     v.parts.push(Part {
         id: PartId(7),
+        as_built_mass_g: None,
         kind: PartKind::BodyTube {
             length_m: 0.09,
             outer_radius_m: 0.0125,
@@ -465,6 +489,7 @@ pub fn two_stage_reference_vehicle() -> Vehicle {
         children: vec![
             Part {
                 id: PartId(8),
+                as_built_mass_g: None,
                 kind: PartKind::FinSet {
                     count: 3,
                     root_chord_m: 0.06,
@@ -478,6 +503,7 @@ pub fn two_stage_reference_vehicle() -> Vehicle {
             },
             Part {
                 id: PartId(9),
+                as_built_mass_g: None,
                 kind: PartKind::MotorMount {
                     motor_designation: "D12".into(),
                     length_m: 0.07,
@@ -502,6 +528,16 @@ mod tests {
     }
 
     #[test]
+    fn as_built_mass_override_precedes_design_mass_in_mass_properties() {
+        let mut vehicle = reference_vehicle();
+        let nominal = vehicle.mass_properties();
+        vehicle.parts[1].children[0].as_built_mass_g = Some(12.0);
+        let measured = vehicle.mass_properties();
+        assert!((measured.total_mass_g - (nominal.total_mass_g + 6.0)).abs() < 1e-9);
+        assert!(measured.cg_from_nose_m > nominal.cg_from_nose_m);
+    }
+
+    #[test]
     fn reference_stack_is_twelve_calibers() {
         let v = reference_vehicle();
         assert!((v.stack_length_m() - 12.0 * 0.025).abs() < 1e-12);
@@ -521,8 +557,8 @@ mod tests {
         // fins:  6 g at 0.075 + 0.225 − 0.5·0.05      = 0.275 m
         // chute: 3 g at 0.075 + 0.05                  = 0.125 m
         // mount: 2 g at 0.075 + 0.155 + 0.5·0.07      = 0.265 m
-        let expected = (8.0 * 0.05 + 15.0 * 0.1875 + 6.0 * 0.275 + 3.0 * 0.125 + 2.0 * 0.265)
-            / 34.0;
+        let expected =
+            (8.0 * 0.05 + 15.0 * 0.1875 + 6.0 * 0.275 + 3.0 * 0.125 + 2.0 * 0.265) / 34.0;
         let props = reference_vehicle().mass_properties();
         assert!(
             (props.cg_from_nose_m - expected).abs() < 1e-12,
@@ -571,6 +607,7 @@ mod tests {
         let mut v = reference_vehicle();
         v.parts[1].children.push(Part {
             id: PartId(9),
+            as_built_mass_g: None,
             kind: PartKind::BodyTube {
                 length_m: 0.1,
                 outer_radius_m: 0.0125,
@@ -587,6 +624,7 @@ mod tests {
         let mut v = reference_vehicle();
         v.parts.push(Part {
             id: PartId(9),
+            as_built_mass_g: None,
             kind: PartKind::MassComponent {
                 name: "lug".into(),
                 position_m: 0.0,
@@ -645,6 +683,7 @@ mod tests {
         let mut v = reference_vehicle();
         v.parts.push(Part {
             id: PartId(20),
+            as_built_mass_g: None,
             kind: PartKind::StageCoupler {
                 length_m: 0.02,
                 outer_radius_m: 0.0125,
@@ -672,6 +711,7 @@ mod tests {
         let mut v = reference_vehicle();
         v.parts.push(Part {
             id: PartId(10),
+            as_built_mass_g: None,
             kind: PartKind::BodyTube {
                 length_m: 0.1,
                 outer_radius_m: 0.0125,

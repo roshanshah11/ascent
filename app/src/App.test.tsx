@@ -17,8 +17,11 @@ const ipc = vi.hoisted(() => ({
   autosaveProject: vi.fn(() => Promise.resolve()),
   checkRecovery: vi.fn(() => Promise.resolve(null)),
   discardRecovery: vi.fn(() => Promise.resolve()),
+  importAtmosphere: vi.fn(),
+  consoleExec: vi.fn(),
   getDocument: vi.fn(),
   getVehicleMarkers: vi.fn(() => Promise.resolve(null)),
+  previewPartParam: vi.fn(),
   dispatchCommand: vi.fn(),
   undoDocument: vi.fn(),
   redoDocument: vi.fn(),
@@ -269,6 +272,26 @@ describe("engine comparison UI", () => {
     });
     expectComparison(true);
     expect(container.textContent).toContain("Apogee delta: 2.0 m");
+  });
+
+  it("imports a selected atmosphere CSV through the journaled backend seam", async () => {
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    expect(input?.accept).toContain(".csv");
+
+    const csv = "altitude_m,wind_speed_ms,wind_direction_deg\n0,3,0\n";
+    const file = { name: "koun-12z.csv", text: vi.fn().mockResolvedValue(csv) };
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    ipc.importAtmosphere.mockResolvedValue(await ipc.getDocument());
+
+    await act(async () => {
+      input?.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(ipc.importAtmosphere).toHaveBeenCalledWith("koun-12z.csv", csv);
+    expect(container.textContent).toContain("Analytic atmosphere");
   });
 
   it("shows a scoped fallback while the 3D viewport loads", async () => {

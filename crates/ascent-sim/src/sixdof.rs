@@ -276,11 +276,20 @@ impl SixDofEngine {
                     .clamp(0.0, 1.0);
                 let apogee = interpolated_event(EventKind::Apogee, t, dt, state, next, frac);
                 events.push(apogee);
-                if rocket.recovery.is_some() {
+                if let Some(recovery) = &rocket.recovery {
                     events.push(Event {
                         kind: EventKind::RecoveryDeploy,
                         ..apogee
                     });
+                    if recovery
+                        .main_deploy_altitude_m
+                        .is_some_and(|deploy_m| apogee.altitude_m <= deploy_m)
+                    {
+                        events.push(Event {
+                            kind: EventKind::MainDeploy,
+                            ..apogee
+                        });
+                    }
                 }
                 state = interpolate_state(state, next, frac)?;
                 state[VELOCITY + 2] = 0.0;
@@ -290,6 +299,36 @@ impl SixDofEngine {
                 steps += 1;
                 history.push(sample(t, state, phase));
                 continue;
+            }
+
+            // Dual-deploy main: descending through the configured altitude
+            // restarts the step from the crossing (same discipline as
+            // apogee), so the main's drag applies from exactly there.
+            if phase == FlightPhase::Descent
+                && events
+                    .iter()
+                    .all(|event| event.kind != EventKind::MainDeploy)
+            {
+                if let Some(deploy_m) = rocket
+                    .recovery
+                    .as_ref()
+                    .and_then(|recovery| recovery.main_deploy_altitude_m)
+                {
+                    if state[POSITION + 2] > deploy_m && next[POSITION + 2] <= deploy_m {
+                        let frac = ((state[POSITION + 2] - deploy_m)
+                            / (state[POSITION + 2] - next[POSITION + 2]))
+                            .clamp(0.0, 1.0);
+                        let deploy =
+                            interpolated_event(EventKind::MainDeploy, t, dt, state, next, frac);
+                        events.push(deploy);
+                        state = interpolate_state(state, next, frac)?;
+                        state[POSITION + 2] = deploy_m;
+                        t = deploy.t;
+                        steps += 1;
+                        history.push(sample(t, state, phase));
+                        continue;
+                    }
+                }
             }
 
             if phase == FlightPhase::Descent
@@ -520,8 +559,8 @@ pub fn simulate_sixdof_staged(
             let from_rail_distance = dot3(vector3(state, POSITION), rail_axis);
             let to_rail_distance = dot3(vector3(next, POSITION), rail_axis);
             if phase == FlightPhase::Rail && from_rail_distance > 0.0 && to_rail_distance <= 0.0 {
-                let frac = (from_rail_distance / (from_rail_distance - to_rail_distance))
-                    .clamp(0.0, 1.0);
+                let frac =
+                    (from_rail_distance / (from_rail_distance - to_rail_distance)).clamp(0.0, 1.0);
                 state = interpolate_state(state, next, frac)?;
                 constrain_rail_state(&mut state, rail_axis, launch_attitude, true);
                 state[POSITION..POSITION + 3].fill(0.0);
@@ -572,11 +611,20 @@ pub fn simulate_sixdof_staged(
                     .clamp(0.0, 1.0);
                 let apogee = interpolated_event(EventKind::Apogee, t, step, state, next, frac);
                 events.push(apogee);
-                if rocket.recovery.is_some() {
+                if let Some(recovery) = &rocket.recovery {
                     events.push(Event {
                         kind: EventKind::RecoveryDeploy,
                         ..apogee
                     });
+                    if recovery
+                        .main_deploy_altitude_m
+                        .is_some_and(|deploy_m| apogee.altitude_m <= deploy_m)
+                    {
+                        events.push(Event {
+                            kind: EventKind::MainDeploy,
+                            ..apogee
+                        });
+                    }
                 }
                 state = interpolate_state(state, next, frac)?;
                 state[VELOCITY + 2] = 0.0;
@@ -587,6 +635,36 @@ pub fn simulate_sixdof_staged(
                 steps += 1;
                 history.push(sample(t, state, phase));
                 continue;
+            }
+
+            // Dual-deploy main: step restarts from the crossing so the
+            // main's drag applies from exactly the deploy altitude.
+            if phase == FlightPhase::Descent
+                && events
+                    .iter()
+                    .all(|event| event.kind != EventKind::MainDeploy)
+            {
+                if let Some(deploy_m) = rocket
+                    .recovery
+                    .as_ref()
+                    .and_then(|recovery| recovery.main_deploy_altitude_m)
+                {
+                    if state[POSITION + 2] > deploy_m && next[POSITION + 2] <= deploy_m {
+                        let frac = ((state[POSITION + 2] - deploy_m)
+                            / (state[POSITION + 2] - next[POSITION + 2]))
+                            .clamp(0.0, 1.0);
+                        let deploy =
+                            interpolated_event(EventKind::MainDeploy, t, step, state, next, frac);
+                        events.push(deploy);
+                        state = interpolate_state(state, next, frac)?;
+                        state[POSITION + 2] = deploy_m;
+                        tau += deploy.t - t;
+                        t = deploy.t;
+                        steps += 1;
+                        history.push(sample(t, state, phase));
+                        continue;
+                    }
+                }
             }
 
             if phase == FlightPhase::Descent
@@ -732,7 +810,7 @@ fn derivative(
             + rocket
                 .recovery
                 .as_ref()
-                .map(|recovery| recovery.chute_cd * recovery.chute_area_m2)
+                .map(|recovery| recovery.descent_cda(position[2].max(0.0)))
                 .unwrap_or(0.0)
     } else {
         body_cda
@@ -849,10 +927,18 @@ fn validate_run_inputs(
         }
     }
     if let Some(recovery) = &rocket.recovery {
-        for (name, value) in [
+        let mut checks = vec![
             ("recovery drag coefficient", recovery.chute_cd),
             ("recovery area", recovery.chute_area_m2),
-        ] {
+        ];
+        if let Some(drogue) = &recovery.drogue {
+            checks.push(("drogue drag coefficient", drogue.cd));
+            checks.push(("drogue area", drogue.area_m2));
+        }
+        if let Some(deploy_m) = recovery.main_deploy_altitude_m {
+            checks.push(("main deploy altitude", deploy_m));
+        }
+        for (name, value) in checks {
             if !value.is_finite() || value < 0.0 {
                 return Err(format!("{name} must be finite and non-negative"));
             }

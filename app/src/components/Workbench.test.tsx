@@ -5,7 +5,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Workbench, { type Workspace } from "./Workbench";
 
-const WORKSPACES: Workspace[] = ["design", "simulate", "results", "review"];
+const WORKSPACE_LABELS: Array<[Workspace, string]> = [
+  ["design", "Design"],
+  ["simulate", "Simulate"],
+  ["results", "Results"],
+  ["review", "Verification"],
+];
 
 describe("Workbench", () => {
   let container: HTMLDivElement;
@@ -24,9 +29,7 @@ describe("Workbench", () => {
   });
 
   const tab = (label: string) =>
-    Array.from(container.querySelectorAll('[role="tab"]')).find(
-      (t) => t.textContent === label,
-    ) as HTMLElement;
+    container.querySelector(`[role="tab"][aria-label="${label}"]`) as HTMLElement;
 
   const render = async (
     workspace: Workspace,
@@ -51,8 +54,8 @@ describe("Workbench", () => {
 
   it("renders a tab per workspace with the current one marked active", async () => {
     await render("design", vi.fn());
-    for (const w of WORKSPACES) {
-      const el = tab(w[0].toUpperCase() + w.slice(1));
+    for (const [, label] of WORKSPACE_LABELS) {
+      const el = tab(label);
       expect(el).toBeTruthy();
     }
     expect(tab("Design").getAttribute("aria-selected")).toBe("true");

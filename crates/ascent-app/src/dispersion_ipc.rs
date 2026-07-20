@@ -11,8 +11,8 @@
 use ascent_aero::{fin_set_cn, nose_cn, total_cp_from_nose_m, Vehicle as AeroVehicle};
 use ascent_domain::vehicle::Vehicle as TreeVehicle;
 use ascent_sim::{
-    run_dispersion_observed, Dispersion, DispersionSummary, PlanarVehicle, SimConfig, Variation,
-    WindProfile,
+    run_dispersion_observed, AtmosphereProfile, Dispersion, DispersionSummary, PlanarVehicle,
+    SimConfig, Variation, WindProfile,
 };
 use serde::{Deserialize, Serialize};
 
@@ -57,9 +57,10 @@ fn capped_samples(requested: u32) -> u32 {
 pub fn run(
     tree: &TreeVehicle,
     design: &Design,
+    atmosphere: Option<&AtmosphereProfile>,
     request: &DispersionRequest,
 ) -> Result<DispersionSummary, String> {
-    run_observed(tree, design, request, |_, _| true)
+    run_observed(tree, design, atmosphere, request, |_, _| true)
         .map(|outcome| outcome.expect("uncancellable run cannot be cancelled"))
 }
 
@@ -69,15 +70,25 @@ pub fn run(
 pub fn run_observed(
     tree: &TreeVehicle,
     design: &Design,
+    atmosphere: Option<&AtmosphereProfile>,
     request: &DispersionRequest,
     on_progress: impl FnMut(u32, u32) -> bool,
 ) -> Result<Option<DispersionSummary>, String> {
-    let (rocket, motor, env) = build_flight(design)?;
+    let (rocket, motor, mut env) = build_flight(design)?;
     let vehicle = planar_vehicle_from_tree(tree)?;
-    let wind = if request.base_wind_ms == 0.0 {
-        WindProfile::calm()
-    } else {
-        WindProfile::constant(request.base_wind_ms)
+    // An imported atmosphere (v0.5) overrides the request's synthetic
+    // constant wind, and its measured densities (when present) override
+    // the analytic density model. It is part of the study input hash, so
+    // this substitution is provenance-tracked, not silent.
+    let wind = match atmosphere {
+        Some(profile) => {
+            if let Some(model) = profile.atmosphere_model() {
+                env.atmosphere = model;
+            }
+            profile.wind_profile()
+        }
+        None if request.base_wind_ms == 0.0 => WindProfile::calm(),
+        None => WindProfile::constant(request.base_wind_ms),
     };
     let spec = Dispersion {
         seed: request.seed,
@@ -106,8 +117,14 @@ mod tests {
             seed: 42,
             samples: 20,
             vary: vec![
-                Variation { param: VaryParam::ThrustPct, sigma: 3.0 },
-                Variation { param: VaryParam::WindSpeedMs, sigma: 1.5 },
+                Variation {
+                    param: VaryParam::ThrustPct,
+                    sigma: 3.0,
+                },
+                Variation {
+                    param: VaryParam::WindSpeedMs,
+                    sigma: 1.5,
+                },
             ],
             base_wind_ms: 3.0,
         }
@@ -116,8 +133,20 @@ mod tests {
     #[test]
     fn reference_design_dispersion_is_deterministic_and_sane() {
         let design = Design::reference();
-        let a = run(&ascent_domain::vehicle::reference_vehicle(), &design, &request()).unwrap();
-        let b = run(&ascent_domain::vehicle::reference_vehicle(), &design, &request()).unwrap();
+        let a = run(
+            &ascent_domain::vehicle::reference_vehicle(),
+            &design,
+            None,
+            &request(),
+        )
+        .unwrap();
+        let b = run(
+            &ascent_domain::vehicle::reference_vehicle(),
+            &design,
+            None,
+            &request(),
+        )
+        .unwrap();
         assert_eq!(
             serde_json::to_string(&a).unwrap(),
             serde_json::to_string(&b).unwrap(),
@@ -125,15 +154,28 @@ mod tests {
         );
         assert_eq!(a.runs.len(), 20);
         // Reference apogee is ~358 m; the fleet median must stay in family.
-        assert!(a.apogee_p50_m > 250.0 && a.apogee_p50_m < 450.0, "p50 {}", a.apogee_p50_m);
-        assert!(a.landing_mean_m > 0.0, "3 m/s mean wind lands the fleet downwind");
+        assert!(
+            a.apogee_p50_m > 250.0 && a.apogee_p50_m < 450.0,
+            "p50 {}",
+            a.apogee_p50_m
+        );
+        assert!(
+            a.landing_mean_m > 0.0,
+            "3 m/s mean wind lands the fleet downwind"
+        );
     }
 
     #[test]
     fn invalid_design_is_rejected() {
         let mut design = Design::reference();
         design.motor_designation = "Z99".into();
-        assert!(run(&ascent_domain::vehicle::reference_vehicle(), &design, &request()).is_err());
+        assert!(run(
+            &ascent_domain::vehicle::reference_vehicle(),
+            &design,
+            None,
+            &request()
+        )
+        .is_err());
     }
 
     #[test]

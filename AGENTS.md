@@ -46,3 +46,16 @@ rtk pip list            rtk pnpm install        rtk npm run <script>
 - `tail` and multi-file `cat`: use raw commands (rtk read is single-file, no tail support)
 - If rtk errors on any command, fall back to the raw command immediately — do not loop on rtk retries
 <!-- /headroom:rtk-instructions -->
+
+## Product Direction
+
+Ascent is a professional aerospace engineering workbench built to the bar of Basilisk, Nyx, RocketPy, and GMAT users.
+
+- Measuring user: a GNC or flight-dynamics engineer at a new-space or defense-tech startup.
+- Goal: Basilisk-grade rigor inside a real workbench that an AI agent can operate.
+- This is a serious craft project, not a product being sold. Do not invent customers, sales strategy, a market wedge, TAM, or student-market positioning.
+- Do not frame Ascent as competition rocketry, collegiate software, a hobbyist tool, or an OpenRocket replacement.
+- IREC/DTEG support is an optional versioned rule pack and validation fixture, not the product identity.
+- Favor modular fidelity, uncertainty quantification, repeatability, provenance, scripting and agent operation, and professional interoperability.
+
+The authoritative direction is `docs/PRODUCT_DIRECTION.md`; the capability roadmap is `docs/plan/2026-07-18-v1-roadmap.md`.

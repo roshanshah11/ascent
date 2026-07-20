@@ -86,49 +86,29 @@ export default function Console({
   };
 
   return (
-    <section
-      style={{
-        marginTop: 16,
-        fontFamily: "ui-monospace, monospace",
-        fontSize: 12,
-        maxWidth: 720,
-      }}
-    >
-      <div
-        style={{
-          border: "1px solid #30363d",
-          borderRadius: 6,
-          padding: 8,
-          maxHeight: 180,
-          overflowY: "auto",
-        }}
-      >
+    <section className="console-panel">
+      <div className="console-output">
         {entries.length === 0 && (
-          <div style={{ color: "#9aa1ab" }}>Ascent console — type `help` for the grammar.</div>
+          <div className="console-empty">Ascent command journal · type <code>help</code> for the grammar.</div>
         )}
         {entries.map((e, i) => (
-          <div key={i}>
-            <div style={{ color: "#58a6ff" }}>&gt; {e.line}</div>
-            <pre
-              style={{
-                margin: "0 0 4px 12px",
-                whiteSpace: "pre-wrap",
-                color: e.ok ? "#9aa1ab" : "#c74b3c",
-              }}
-            >
-              {e.output}
-            </pre>
+          <div className="console-entry" key={i}>
+            <div className="console-command"><span>&gt;</span> {e.line}</div>
+            <pre className={e.ok ? "" : "error"}>{e.output}</pre>
           </div>
         ))}
       </div>
-      <input
-        value={line}
-        onChange={(e) => setLine(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder="set-sim-param cd 0.7"
-        aria-label="console input"
-        style={{ width: "100%", marginTop: 4, fontFamily: "inherit", fontSize: 12 }}
-      />
+      <div className="console-input-row">
+        <span>&gt;</span>
+        <input
+          value={line}
+          onChange={(e) => setLine(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder="set-sim-param cd 0.7"
+          aria-label="console input"
+        />
+        <kbd>ENTER</kbd>
+      </div>
     </section>
   );
 }

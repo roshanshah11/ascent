@@ -57,8 +57,7 @@ pub fn fin_set_cn(v: &Vehicle) -> ComponentCn {
     let cn_alpha = interference * (4.0 * n * (s / d) * (s / d))
         / (1.0 + (1.0 + (2.0 * l / (cr + ct)) * (2.0 * l / (cr + ct))).sqrt());
 
-    let xf = m / 3.0 * (cr + 2.0 * ct) / (cr + ct)
-        + (cr + ct - cr * ct / (cr + ct)) / 6.0;
+    let xf = m / 3.0 * (cr + 2.0 * ct) / (cr + ct) + (cr + ct - cr * ct / (cr + ct)) / 6.0;
 
     ComponentCn {
         cn_alpha,

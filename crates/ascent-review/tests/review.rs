@@ -3,7 +3,11 @@
 
 use ascent_aero::{BodyTube, FinSet, NoseCone, NoseShape, RulePack, Vehicle};
 use ascent_domain::Motor;
-use ascent_review::{evaluate, solve, ChuteConfig, ReviewDesign, BALLAST_NAME};
+use ascent_review::{
+    evaluate, solve,
+    structural::{evaluate_structural, FinMaterial, StructuralInputs},
+    ChuteConfig, ReviewDesign, StructuralConfig, BALLAST_NAME,
+};
 
 const C6_JSON: &str = include_str!("../../ascent-domain/data/motors/estes_c6.json");
 const IREC_JSON: &str = include_str!("../../../data/rules/irec-2026.json");
@@ -49,6 +53,8 @@ fn base_design() -> ReviewDesign {
         // (rule irec-2026-published-rail-length-single-stage).
         rail_length_m: 5.18,
         motor_designation: "C6".into(),
+        fin_thickness_m: 0.003,
+        structural: StructuralConfig::default(),
     }
 }
 
@@ -101,7 +107,7 @@ fn solver_is_deterministic_across_runs() {
     let design = base_design();
     let motor = c6();
     let rules = rules();
-    let a = solve(&design, &[motor.clone()], &rules, 350.0, 3.0).unwrap();
+    let a = solve(&design, std::slice::from_ref(&motor), &rules, 350.0, 3.0).unwrap();
     let b = solve(&design, &[motor], &rules, 350.0, 3.0).unwrap();
     assert_eq!(
         serde_json::to_string(&a.design).unwrap(),
@@ -135,4 +141,59 @@ fn repair_reruns_to_identical_review() {
         serde_json::to_string(&fresh).unwrap(),
         serde_json::to_string(&repair.review).unwrap()
     );
+}
+
+#[test]
+fn structural_pack_reports_hand_computed_passing_margins_with_sources() {
+    // V_flutter = 0.03164 * sqrt(E * t^3 / (rho * c * b^3))
+    // = 166.0754 m/s.
+    let inputs = StructuralInputs {
+        fin_span_m: 0.04,
+        fin_root_chord_m: 0.05,
+        fin_thickness_m: 0.003,
+        fin_material: FinMaterial {
+            name: "birch plywood".into(),
+            elastic_modulus_pa: 4.0e9,
+        },
+        air_density_kg_m3: 1.225,
+        predicted_max_velocity_ms: 100.0,
+        max_motor_thrust_n: 20.0,
+        airframe_thrust_rating_n: 30.0,
+        rail_exit_velocity_ms: 27.0,
+    };
+    let checks = evaluate_structural(&inputs);
+    assert_eq!(checks.len(), 3);
+    assert!(checks.iter().all(|check| check.pass));
+    assert!(
+        (checks[0].value - 166.0754).abs() < 0.02,
+        "{:#?}",
+        checks[0]
+    );
+    assert_eq!(checks[0].limit, 150.0);
+    // IREC's pack requires flutter velocity >= 1.5 * predicted max velocity.
+    assert!((checks[0].margin - 16.08).abs() < 0.02);
+    assert_eq!(checks[1].margin, 10.0);
+    assert_eq!(checks[2].margin, 2.0);
+    assert!(checks.iter().all(|check| !check.source.is_empty()));
+}
+
+#[test]
+fn structural_pack_reports_failing_margins() {
+    let inputs = StructuralInputs {
+        fin_span_m: 0.04,
+        fin_root_chord_m: 0.05,
+        fin_thickness_m: 0.003,
+        fin_material: FinMaterial {
+            name: "birch plywood".into(),
+            elastic_modulus_pa: 4.0e9,
+        },
+        air_density_kg_m3: 1.225,
+        predicted_max_velocity_ms: 200.0,
+        max_motor_thrust_n: 31.0,
+        airframe_thrust_rating_n: 30.0,
+        rail_exit_velocity_ms: 24.0,
+    };
+    let checks = evaluate_structural(&inputs);
+    assert!(checks.iter().all(|check| !check.pass));
+    assert!(checks.iter().all(|check| check.margin < 0.0));
 }

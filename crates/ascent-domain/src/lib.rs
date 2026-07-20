@@ -13,8 +13,10 @@
 //!   ([`reference_vehicle`], [`two_stage_reference_vehicle`])
 
 pub mod eng_import;
+pub mod evidence;
 pub mod motor;
 pub mod registry;
+pub mod telemetry;
 pub mod vehicle;
 
 pub use eng_import::{parse_eng, EngImportError};

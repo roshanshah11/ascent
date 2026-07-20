@@ -29,6 +29,38 @@ describe("diffDesign", () => {
     ]);
   });
 
+  it("journals every dual-deploy field and clears optional values with null", () => {
+    const dual = {
+      ...base,
+      chute: {
+        ...base.chute,
+        main_deploy_altitude_m: 60,
+        drogue_diameter_cm: 8,
+        drogue_cd: 0.8,
+      },
+    };
+    expect(diffDesign(base, dual)).toEqual([
+      { cmd: "set_sim_param", param: "chute.main_deploy_altitude_m", value: 60 },
+      { cmd: "set_sim_param", param: "chute.drogue_diameter_cm", value: 8 },
+      { cmd: "set_sim_param", param: "chute.drogue_cd", value: 0.8 },
+    ]);
+    expect(
+      diffDesign(dual, {
+        ...dual,
+        chute: {
+          ...dual.chute,
+          main_deploy_altitude_m: null,
+          drogue_diameter_cm: null,
+          drogue_cd: null,
+        },
+      }),
+    ).toEqual([
+      { cmd: "set_sim_param", param: "chute.main_deploy_altitude_m", value: null },
+      { cmd: "set_sim_param", param: "chute.drogue_diameter_cm", value: null },
+      { cmd: "set_sim_param", param: "chute.drogue_cd", value: null },
+    ]);
+  });
+
   it("routes motor changes through select_motor", () => {
     expect(diffDesign(base, { ...base, motor_designation: "B6" })).toEqual([
       { cmd: "select_motor", designation: "B6" },

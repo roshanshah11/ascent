@@ -15,7 +15,10 @@ const D12_MISSING_ZERO: &str =
 fn bundled_registry_has_the_three_stock_motors() {
     let reg = MotorRegistry::bundled();
     for designation in ["C6", "B6", "D12"] {
-        assert!(reg.get(designation).is_some(), "missing bundled motor {designation}");
+        assert!(
+            reg.get(designation).is_some(),
+            "missing bundled motor {designation}"
+        );
     }
     assert_eq!(reg.list().len(), 3);
 }
@@ -37,8 +40,13 @@ fn register_eng_adds_a_new_designation_alongside_the_bundled_set() {
         .register_eng(B6_0, json!({"source": "conformance corpus"}))
         .expect("B6-0 should register");
     assert_eq!(outcome.first_designation, "B6-0");
-    assert!(outcome.replaced.is_empty(), "a new designation replaces nothing");
-    let m = reg.get("B6-0").expect("B6-0 must be findable after registration");
+    assert!(
+        outcome.replaced.is_empty(),
+        "a new designation replaces nothing"
+    );
+    let m = reg
+        .get("B6-0")
+        .expect("B6-0 must be findable after registration");
     assert_eq!(m.manufacturer, "E");
     assert_eq!(
         m.raw_header.as_deref(),
@@ -50,16 +58,25 @@ fn register_eng_adds_a_new_designation_alongside_the_bundled_set() {
     );
     // Bundled "B6" is untouched; the registry now also has "B6-0".
     assert!(reg.get("B6").is_some(), "bundled B6 must still be present");
-    assert_eq!(reg.list().len(), 4, "B6-0 is a new designation, so the registry grows");
+    assert_eq!(
+        reg.list().len(),
+        4,
+        "B6-0 is a new designation, so the registry grows"
+    );
 }
 
 #[test]
 fn register_eng_replaces_existing_designation_rather_than_duplicating() {
     let mut reg = MotorRegistry::bundled();
     let before = reg.get("C6").unwrap().provenance.clone();
-    let outcome = reg.register_eng(C6, json!({"source": "replacement"})).unwrap();
+    let outcome = reg
+        .register_eng(C6, json!({"source": "replacement"}))
+        .unwrap();
     let after = reg.get("C6").unwrap().provenance.clone();
-    assert_ne!(before, after, "provenance should reflect the newly registered source");
+    assert_ne!(
+        before, after,
+        "provenance should reflect the newly registered source"
+    );
     assert_eq!(reg.list().len(), 3, "replace must not grow the registry");
     assert_eq!(
         outcome.replaced,
@@ -74,7 +91,10 @@ fn register_eng_propagates_parse_errors_as_strings() {
     let err = reg
         .register_eng(D12_MISSING_ZERO, json!({}))
         .expect_err("malformed source must not register");
-    assert!(err.contains("line"), "error string should carry the line number: {err}");
+    assert!(
+        err.contains("line"),
+        "error string should carry the line number: {err}"
+    );
 }
 
 #[test]

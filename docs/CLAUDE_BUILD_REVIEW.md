@@ -40,11 +40,43 @@
 
 ### 5. Test the stated acceptance paths, not only helpers and mocked callbacks
 
-**Evidence.** The current frontend suite passes (**88 tests**), and `cargo test -p ascent-app` passes. The new palette component test proves its mocked `onExec` callback is called for one line, but it does not prove an actual palette command reaches `console_exec` and becomes a journal entry. `ViewportR3F` has no direct rendered/component test; the new mesh-group tests cover only pure grouping math.
+**Evidence.** The current frontend suite passes (**93 tests**), and the complete `cargo xtask test` gate passes. The new palette component test proves its mocked `onExec` callback is called for one line, but it does not prove an actual palette command reaches `console_exec` and becomes a journal entry. `ViewportR3F` has no direct rendered/component test; the new mesh-group tests cover only pure grouping math.
 
 **Correction.** Add a focused Rust/Tauri integration test that calls `console_exec`, then inspects `session_journal` for the canonical line and verifies replay. For the viewport, add a lightweight Canvas-mocked component test covering CP/CG marker data and the 2D/3D toggle, while retaining pure mesh tests. Keep the full suite and production build as gates.
 
 **Why it matters.** The acceptance criteria are command journaling, read-only rendering, and a live tree-derived viewport. Unit tests alone are not evidence for those boundaries.
+
+### 6. Do not claim an asynchronous MCP Tasks implementation when each task has already run synchronously
+
+**Evidence.** `ascent-mcp` executes `run_study_now` inside `tools/call`, then, only when a `task` parameter is present, stores the *already-completed* result and returns `status: "completed"`. The same process cannot receive a cancel request or return progress until the simulation is over. `tasks/cancel` always returns `task already completed`, yet the tool description says task-augmented calls support long dispersions.
+
+**Correction.** Either keep `tasks` out of the advertised capability catalog until there is a real background job/state machine with queued/running/completed/failed/cancelled states, or implement it against the existing job-runner seam. The task path must return immediately, progress must be observable, cancellation must affect queued/running work, and `tasks/result` must only become available at completion. Add a round-trip test that demonstrates those transitions.
+
+**Why it matters.** A synchronous call wrapped in a completed task changes protocol vocabulary, not latency or operability. It is especially misleading for the exact long-dispersion case Tasks was introduced to solve.
+
+### 7. Re-evaluate the SDK decision with the actual stdio surface, not an assumed networking cost
+
+**Evidence.** `crates/ascent-mcp/Cargo.toml` rejects `rmcp` because Tokio is described as an “async-network runtime” that conflicts with the no-network invariant. Current official RMCP documentation exposes a server-capable `transport::io::stdio()` transport and describes stdio as a built-in server transport. An async runtime is not a network connection.
+
+**Correction.** Prototype the five tools with RMCP's stdio-only server features and compare the resulting dependency/build cost against the hand-written protocol. If the dependency cost still loses, retain the hand-roll only after adding protocol-conformance coverage: initialize gating, initialize negotiation, tool schemas, task lifecycle, cancellation, and malformed-message handling. Do not let “no runtime network” be used as a reason to reject a local stdio SDK without evidence.
+
+**Why it matters.** MCP protocol churn is precisely where an official SDK buys correctness. A small local server is a reasonable exception, but the exception needs a technically true justification.
+
+### 8. Enforce MCP initialization and validate numeric narrowing at the protocol boundary
+
+**Evidence.** `McpServer` tracks `initialized` but never reads it, so `tools/list` and `tools/call` succeed before `initialize`. `run_study` accepts a JSON `u64` and casts it directly to `u32`, silently wrapping values above `u32::MAX` into a different study id.
+
+**Correction.** Reject all non-initialize requests before a successful initialization (aside from any specification-required probes), and use `u32::try_from(sid)` with a clear invalid-parameter error. Add exact tests for both conditions.
+
+**Why it matters.** These are cheap boundary checks that prevent confusing client failures and make the MCP seam safe to automate.
+
+### 9. Complete the workspace metadata and public-surface documentation pass
+
+**Evidence.** The workspace declares `license = "MIT"`, but `ascent-aero`, `ascent-app`, and `ascent-review` do not inherit it with `license.workspace = true`; Cargo metadata reports their license as `null`. Their crate roots also begin directly with module/export declarations rather than a crate-level description of the intended public surface, despite this being an explicit workspace-pass acceptance item.
+
+**Correction.** Add `license.workspace = true` consistently to every private crate manifest, and start each `src/lib.rs` with a concise `//!` contract describing consumers, stable exports, and intentionally internal modules. Keep the export lists curated as they are.
+
+**Why it matters.** A workspace pass should make the crate graph easier to consume and package, not merely add an `xtask` and CI file.
 
 ## Confirmed good choices
 
@@ -55,7 +87,7 @@
 
 ## Monitoring checklist
 
-- [ ] Re-check the worktree when each Claude stream finishes.
-- [ ] Re-run frontend tests, the production build, and affected Rust tests after the final write burst.
+- [x] Re-check the worktree after Claude committed the five v0.4 streams.
+- [x] Run the complete `cargo xtask test` gate (Rust workspace tests, typecheck, 93 Vitest tests) and the production build.
 - [ ] Inspect the final viewport visually at desktop and narrow width before calling the aesthetic work complete.
-- [ ] Reconcile any new crate/workspace/MCP changes against the no-network and single-dispatcher invariants.
+- [x] Reconcile the new crate/workspace/MCP changes against the no-network and single-dispatcher invariants.

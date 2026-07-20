@@ -176,6 +176,8 @@ mod tests {
         Recovery {
             chute_cd: 0.75,
             chute_area_m2: std::f64::consts::PI * 0.15 * 0.15,
+            drogue: None,
+            main_deploy_altitude_m: None,
         }
     }
 
@@ -200,9 +202,7 @@ mod tests {
         assert!((stages[1].dry_mass_kg - 0.034).abs() < 1e-9);
         assert!(stages[0].vehicle.cp_from_nose_m > stages[1].vehicle.cp_from_nose_m);
         assert!(stages[0].vehicle.cg_from_nose_m > stages[1].vehicle.cg_from_nose_m);
-        assert!(
-            stages[0].vehicle.pitch_inertia_kgm2 > stages[1].vehicle.pitch_inertia_kgm2
-        );
+        assert!(stages[0].vehicle.pitch_inertia_kgm2 > stages[1].vehicle.pitch_inertia_kgm2);
     }
 
     #[test]
@@ -255,8 +255,13 @@ mod tests {
         assert!(sixdof.summary.apogee_m > 0.0);
 
         // Cross-engine: same tree, apogees within 5%.
-        let rel = (sixdof.summary.apogee_m - planar.summary.apogee_m).abs()
-            / planar.summary.apogee_m;
-        assert!(rel < 0.05, "{} vs {}", sixdof.summary.apogee_m, planar.summary.apogee_m);
+        let rel =
+            (sixdof.summary.apogee_m - planar.summary.apogee_m).abs() / planar.summary.apogee_m;
+        assert!(
+            rel < 0.05,
+            "{} vs {}",
+            sixdof.summary.apogee_m,
+            planar.summary.apogee_m
+        );
     }
 }

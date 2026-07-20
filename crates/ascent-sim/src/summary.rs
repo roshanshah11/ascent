@@ -47,12 +47,7 @@ pub fn content_hash<T: Serialize>(value: &T) -> String {
 }
 
 /// SHA-256 of the canonical serialized inputs. Same inputs → same hash.
-pub fn input_hash(
-    rocket: &Rocket,
-    motor: &Motor,
-    env: &Environment,
-    config: &SimConfig,
-) -> String {
+pub fn input_hash(rocket: &Rocket, motor: &Motor, env: &Environment, config: &SimConfig) -> String {
     content_hash(&serde_json::json!({
         "rocket": rocket,
         "motor": motor,

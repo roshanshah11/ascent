@@ -215,7 +215,9 @@ mod tests {
         ] {
             for f in scorecard(&inputs).factors {
                 assert!(
-                    ["docs/", "crates/", "data/"].iter().any(|p| f.basis.contains(p)),
+                    ["docs/", "crates/", "data/"]
+                        .iter()
+                        .any(|p| f.basis.contains(p)),
                     "{} basis cites no checked-in file: {}",
                     f.name,
                     f.basis
@@ -230,7 +232,12 @@ mod tests {
         let b = scorecard(&reference_inputs());
         assert_eq!(a, b, "identical inputs must give identical scorecards");
         for q in &a.quantities {
-            assert_eq!(q.regime, Regime::Validated, "{} should be validated", q.quantity);
+            assert_eq!(
+                q.regime,
+                Regime::Validated,
+                "{} should be validated",
+                q.quantity
+            );
         }
     }
 
@@ -248,7 +255,10 @@ mod tests {
             .unwrap();
         match &apogee.regime {
             Regime::Extrapolated(reason) => {
-                assert!(reason.contains("Mach"), "reason must name the boundary: {reason}");
+                assert!(
+                    reason.contains("Mach"),
+                    "reason must name the boundary: {reason}"
+                );
                 assert!(
                     reason.contains("docs/EVIDENCE.md"),
                     "reason must cite the evidence file: {reason}"
@@ -257,7 +267,10 @@ mod tests {
             Regime::Validated => panic!("supersonic apogee must be Extrapolated"),
         }
         let regime_factor = card.factors.last().unwrap();
-        assert!(regime_factor.score < 3, "regime factor must drop outside the boundary");
+        assert!(
+            regime_factor.score < 3,
+            "regime factor must drop outside the boundary"
+        );
     }
 
     #[test]
@@ -281,7 +294,10 @@ mod tests {
             max_velocity_ms: SPEED_OF_SOUND_SEA_LEVEL_MS * 0.80,
             ..reference_inputs()
         });
-        assert!(just_under.quantities.iter().all(|q| q.regime == Regime::Validated));
+        assert!(just_under
+            .quantities
+            .iter()
+            .all(|q| q.regime == Regime::Validated));
         assert!(at_boundary
             .quantities
             .iter()

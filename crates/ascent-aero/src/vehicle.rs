@@ -54,7 +54,7 @@ impl FinSet {
     pub fn planform_centroid_m(&self) -> f64 {
         let (cr, ct, m) = (self.root_chord_m, self.tip_chord_m, self.sweep_m);
         let area2 = cr + ct; // 2·area / span
-        // ∫ x_le·c dy over y∈[0,1] (span factored out): m·(cr + 2·ct)/6
+                             // ∫ x_le·c dy over y∈[0,1] (span factored out): m·(cr + 2·ct)/6
         let le_term = m * (cr + 2.0 * ct) / 6.0;
         // ∫ (c²/2) dy = (cr² + cr·ct + ct²)/6
         let chord_term = (cr * cr + cr * ct + ct * ct) / 6.0;
@@ -111,7 +111,7 @@ impl Vehicle {
                     shape,
                     length_m,
                     base_radius_m,
-                    mass_g,
+                    mass_g: _,
                 } => {
                     if nose.is_some() {
                         return Err("only one nose cone is supported".into());
@@ -124,7 +124,7 @@ impl Vehicle {
                         NoseCone {
                             length_m: *length_m,
                             base_diameter_m: 2.0 * base_radius_m,
-                            mass_kg: mass_g / 1000.0,
+                            mass_kg: part.effective_mass_g() / 1000.0,
                         },
                         aero_shape,
                     ));
@@ -133,37 +133,34 @@ impl Vehicle {
                 PartKind::BodyTube {
                     length_m,
                     outer_radius_m,
-                    mass_g,
                     ..
                 } => {
                     body_length += length_m;
-                    body_mass += mass_g / 1000.0;
+                    body_mass += part.effective_mass_g() / 1000.0;
                     body_diameter = body_diameter.max(2.0 * outer_radius_m);
                     *length_m
                 }
                 PartKind::Transition {
                     length_m,
                     aft_radius_m,
-                    mass_g,
                     ..
                 } => {
                     // Aero transition handling is future work; mass-wise it
                     // folds into the equivalent body tube.
                     body_length += length_m;
-                    body_mass += mass_g / 1000.0;
+                    body_mass += part.effective_mass_g() / 1000.0;
                     body_diameter = body_diameter.max(2.0 * aft_radius_m);
                     *length_m
                 }
                 PartKind::StageCoupler {
                     length_m,
                     outer_radius_m,
-                    mass_g,
                     ..
                 } => {
                     // Constant-radius section: no Barrowman CN contribution,
                     // but its length and mass are part of the airframe.
                     body_length += length_m;
-                    body_mass += mass_g / 1000.0;
+                    body_mass += part.effective_mass_g() / 1000.0;
                     body_diameter = body_diameter.max(2.0 * outer_radius_m);
                     *length_m
                 }
@@ -177,7 +174,6 @@ impl Vehicle {
                         tip_chord_m,
                         span_m,
                         sweep_m,
-                        mass_g,
                         ..
                     } => {
                         if fins.is_some() {
@@ -190,33 +186,29 @@ impl Vehicle {
                             span_m: *span_m,
                             sweep_m: *sweep_m,
                             position_from_nose_m: fore + length - root_chord_m,
-                            mass_kg: mass_g / 1000.0,
+                            mass_kg: child.effective_mass_g() / 1000.0,
                         });
                     }
-                    PartKind::MotorMount {
-                        position_m, mass_g, ..
-                    } => {
+                    PartKind::MotorMount { position_m, .. } => {
                         motor_position = Some(fore + position_m);
                         point_masses.push(PointMass {
                             name: "motor mount".into(),
-                            mass_kg: mass_g / 1000.0,
+                            mass_kg: child.effective_mass_g() / 1000.0,
                             position_from_nose_m: fore + position_m,
                         });
                     }
-                    PartKind::Parachute {
-                        position_m, mass_g, ..
-                    } => point_masses.push(PointMass {
+                    PartKind::Parachute { position_m, .. } => point_masses.push(PointMass {
                         name: "parachute".into(),
-                        mass_kg: mass_g / 1000.0,
+                        mass_kg: child.effective_mass_g() / 1000.0,
                         position_from_nose_m: fore + position_m,
                     }),
                     PartKind::MassComponent {
                         name,
                         position_m,
-                        mass_g,
+                        mass_g: _,
                     } => point_masses.push(PointMass {
                         name: name.clone(),
-                        mass_kg: mass_g / 1000.0,
+                        mass_kg: child.effective_mass_g() / 1000.0,
                         position_from_nose_m: fore + position_m,
                     }),
                     _ => {}
@@ -270,9 +262,8 @@ impl Vehicle {
         let nose_cg = 2.0 / 3.0 * self.nose.length_m;
         let body_cg = self.nose.length_m + self.body.length_m / 2.0;
         let fin_cg = self.fins.position_from_nose_m + self.fins.planform_centroid_m();
-        let mut moment = self.nose.mass_kg * nose_cg
-            + self.body.mass_kg * body_cg
-            + self.fins.mass_kg * fin_cg;
+        let mut moment =
+            self.nose.mass_kg * nose_cg + self.body.mass_kg * body_cg + self.fins.mass_kg * fin_cg;
         for p in &self.point_masses {
             moment += p.mass_kg * p.position_from_nose_m;
         }
@@ -362,10 +353,36 @@ mod tests {
     }
 
     #[test]
+    fn as_built_tree_mass_moves_cg_without_moving_cp() {
+        let tree = reference_vehicle();
+        let (nominal, shape) = Vehicle::from_tree(&tree).unwrap();
+        let cp = barrowman::total_cp_from_nose_m(&nominal, shape);
+        let mut measured_tree = tree;
+        measured_tree.parts[1].children[0].as_built_mass_g = Some(12.0);
+        let (measured, measured_shape) = Vehicle::from_tree(&measured_tree).unwrap();
+        assert!(measured.dry_cg_from_nose_m() > nominal.dry_cg_from_nose_m());
+        assert_eq!(
+            barrowman::total_cp_from_nose_m(&measured, measured_shape),
+            cp
+        );
+        let motor = Motor::from_json(include_str!(
+            "../../ascent-domain/data/motors/estes_c6.json"
+        ))
+        .unwrap();
+        assert!(
+            crate::stability_calibers_at(&measured, measured_shape, &motor, 0.0)
+                < crate::stability_calibers_at(&nominal, shape, &motor, 0.0),
+            "extra aft fin mass must reduce the CG-to-CP stability margin"
+        );
+    }
+
+    #[test]
     fn conversion_requires_a_complete_airframe() {
         let mut no_fins = reference_vehicle();
         no_fins.parts[1].children.remove(0);
-        assert!(Vehicle::from_tree(&no_fins).unwrap_err().contains("fin set"));
+        assert!(Vehicle::from_tree(&no_fins)
+            .unwrap_err()
+            .contains("fin set"));
         let mut no_nose = reference_vehicle();
         no_nose.parts.remove(0);
         assert!(Vehicle::from_tree(&no_nose).unwrap_err().contains("nose"));

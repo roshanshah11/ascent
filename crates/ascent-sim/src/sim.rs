@@ -81,7 +81,7 @@ fn derivative(
     };
     if phase == Phase::Descent {
         if let Some(r) = &rocket.recovery {
-            drag_cda += r.chute_cd * r.chute_area_m2;
+            drag_cda += r.descent_cda(h.max(0.0));
         }
     }
     let drag = 0.5 * rho * drag_cda * v * v * v.signum();
@@ -203,11 +203,22 @@ pub fn simulate_vertical(
             let frac = state.1 / (state.1 - next.1);
             let apogee = lerp_event(EventKind::Apogee, t, dt, state, next, frac);
             events.push(apogee);
-            if rocket.recovery.is_some() {
+            if let Some(recovery) = &rocket.recovery {
                 events.push(Event {
                     kind: EventKind::RecoveryDeploy,
                     ..apogee
                 });
+                // Apogee already at/below the main-deploy altitude: the
+                // main opens immediately (altimeter behavior).
+                if recovery
+                    .main_deploy_altitude_m
+                    .is_some_and(|deploy_m| apogee.altitude_m <= deploy_m)
+                {
+                    events.push(Event {
+                        kind: EventKind::MainDeploy,
+                        ..apogee
+                    });
+                }
             }
             phase = Phase::Descent;
             // Restart the step from apogee so descent drag applies from the
@@ -217,6 +228,28 @@ pub fn simulate_vertical(
             steps += 1;
             samples.push(record(t, state));
             continue;
+        }
+
+        // Main deploy: descending through the configured altitude. The
+        // step restarts from the crossing so the main's drag applies from
+        // exactly the deploy altitude (same discipline as apogee).
+        if phase == Phase::Descent && events.iter().all(|e| e.kind != EventKind::MainDeploy) {
+            if let Some(deploy_m) = rocket
+                .recovery
+                .as_ref()
+                .and_then(|r| r.main_deploy_altitude_m)
+            {
+                if state.0 > deploy_m && next.0 <= deploy_m {
+                    let frac = (state.0 - deploy_m) / (state.0 - next.0);
+                    let deploy = lerp_event(EventKind::MainDeploy, t, dt, state, next, frac);
+                    events.push(deploy);
+                    state = (deploy_m, deploy.velocity_ms);
+                    t = deploy.t;
+                    steps += 1;
+                    samples.push(record(t, state));
+                    continue;
+                }
+            }
         }
 
         // Landing: altitude crosses zero on the way down.

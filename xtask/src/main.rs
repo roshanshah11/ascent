@@ -2,10 +2,17 @@
 //!
 //! Tasks:
 //! - `test`     full gate: Rust workspace tests + frontend typecheck + vitest
-//! - `metadata` verify every workspace package declares a license
 //! - `audit`    cargo audit (advisory database; requires cargo-audit)
 //! - `vet`      cargo vet (supply-chain review; requires cargo-vet)
 //! - `ci`       everything above, in order — what CI runs
+
+//!
+//! Workspace maintenance commands:
+//! - `test`     run metadata, Rust, frontend typecheck, and frontend tests
+//! - `metadata` verify every workspace package declares a license
+//! - `audit`    cargo audit (advisory database; requires cargo-audit)
+//! - `vet`      cargo vet (supply-chain review; requires cargo-vet)
+//! - `ci`       everything above, in order
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -58,19 +65,59 @@ fn task_metadata() -> Result<(), String> {
     Ok(())
 }
 
+fn task_test_steps() -> [&'static str; 7] {
+    [
+        "cargo fmt --check",
+        "cargo clippy",
+        "MCP agent evals",
+        "cargo test",
+        "frontend typecheck",
+        "vitest",
+        "frontend production build",
+    ]
+}
+
 fn task_test() -> Result<(), String> {
     task_metadata()?;
-    cargo(&["test", "--workspace"], "cargo test")?;
-    npm(&["run", "typecheck"], "frontend typecheck")?;
-    npm(&["test"], "vitest")
+    for step in task_test_steps() {
+        match step {
+            "cargo fmt --check" => cargo(&["fmt", "--all", "--", "--check"], step)?,
+            "cargo clippy" => cargo(
+                &[
+                    "clippy",
+                    "--workspace",
+                    "--all-targets",
+                    "--",
+                    "-D",
+                    "warnings",
+                ],
+                step,
+            )?,
+            // Keep the agent-contract golden transcripts visible in CI rather
+            // than relying on their inclusion as an incidental workspace test target.
+            "MCP agent evals" => cargo(&["test", "-p", "ascent-mcp", "--test", "evals"], step)?,
+            "cargo test" => cargo(&["test", "--workspace"], step)?,
+            "frontend typecheck" => npm(&["run", "typecheck"], step)?,
+            "vitest" => npm(&["test"], step)?,
+            "frontend production build" => npm(&["run", "build"], step)?,
+            _ => unreachable!("all test steps are handled"),
+        }
+    }
+    Ok(())
 }
 
 fn task_audit() -> Result<(), String> {
-    cargo(&["audit"], "cargo audit (install: cargo install cargo-audit)")
+    cargo(
+        &["audit"],
+        "cargo audit (install: cargo install cargo-audit)",
+    )
 }
 
 fn task_vet() -> Result<(), String> {
-    cargo(&["vet", "--locked"], "cargo vet (install: cargo install cargo-vet)")
+    cargo(
+        &["vet", "--locked"],
+        "cargo vet (install: cargo install cargo-vet)",
+    )
 }
 
 fn main() -> std::process::ExitCode {
@@ -97,6 +144,22 @@ fn main() -> std::process::ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_test_gate_names_every_release_check() {
+        assert_eq!(
+            task_test_steps(),
+            [
+                "cargo fmt --check",
+                "cargo clippy",
+                "MCP agent evals",
+                "cargo test",
+                "frontend typecheck",
+                "vitest",
+                "frontend production build",
+            ]
+        );
+    }
 
     #[test]
     fn every_workspace_package_declares_a_license() {

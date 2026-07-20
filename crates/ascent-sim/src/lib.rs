@@ -14,16 +14,20 @@
 //! - `dispersion`: [`run_dispersion`] / [`run_dispersion_observed`],
 //!   [`Dispersion`], [`Variation`], [`DispersionSummary`]
 //! - `rocket` / `atmosphere`: [`Rocket`], [`Environment`], [`DragModel`],
-//!   [`Recovery`], [`AtmosphereModel`]
+//!   [`Recovery`], [`AtmosphereModel`] / [`DensityPoint`]
+//! - `profile`: [`AtmosphereProfile`] / [`ProfileLayer`] — imported
+//!   wind/density soundings (v0.5), hashed into study inputs upstream
 //! - `events` / `summary`: [`Event`], [`EventKind`], [`SimSummary`],
 //!   [`content_hash`] / [`input_hash`]
 //! - `engine`: the [`SimEngine`] trait and [`engines`] registry
 
 pub mod atmosphere;
-pub mod engine;
 pub mod dispersion;
+pub mod engine;
 pub mod events;
+pub mod evidence_trace;
 pub mod planar;
+pub mod profile;
 pub mod rocket;
 #[cfg(feature = "bridge-rocketpy")]
 pub mod rocketpy_bridge;
@@ -31,23 +35,25 @@ pub mod sim;
 pub mod sixdof;
 pub mod summary;
 
-pub use atmosphere::AtmosphereModel;
+pub use atmosphere::{AtmosphereModel, DensityPoint};
 pub use dispersion::{
-    percentile, run_dispersion, run_dispersion_observed, CompactRun, Dispersion, DispersionSummary, LandingEllipse,
-    Variation, VaryParam,
+    percentile, run_dispersion, run_dispersion_observed, CompactRun, Dispersion, DispersionSummary,
+    LandingEllipse, Variation, VaryParam,
 };
 pub use engine::{engines, NativeEngine, SimEngine};
+pub use events::{Event, EventKind};
+pub use evidence_trace::{
+    flight_trace_from_dispersion, flight_trace_from_sixdof, flight_trace_from_vertical,
+};
 pub use planar::{
     planar_convergence, simulate_planar, simulate_planar_staged, PlanarConvergence, PlanarStage,
     PlanarStagedResult, PlanarSummary, PlanarVehicle, WindLayer, WindProfile,
 };
-pub use events::{Event, EventKind};
-pub use rocket::{DragModel, Environment, Recovery, Rocket};
+pub use profile::{AtmosphereProfile, ProfileLayer};
+pub use rocket::{DragModel, Drogue, Environment, Recovery, Rocket};
 #[cfg(feature = "bridge-rocketpy")]
 pub use rocketpy_bridge::RocketPyEngine;
-pub use sim::{
-    convergence_report, simulate_vertical, ConvergenceReport, SimConfig, SimResult,
-};
+pub use sim::{convergence_report, simulate_vertical, ConvergenceReport, SimConfig, SimResult};
 pub use sixdof::{
     simulate_sixdof_staged, FlightPhase, SixDofEngine, SixDofLaunch, SixDofResult, SixDofSample,
     SixDofStage, SixDofVehicle, Wind3DLayer, Wind3DProfile,

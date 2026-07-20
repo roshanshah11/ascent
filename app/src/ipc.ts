@@ -2,12 +2,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   Command,
+  CommandProposal,
+  CounterfactualReview,
   Design,
   DocumentState,
   DispersionRequest,
   DispersionSummary,
   EvidenceReport,
   MotorInfo,
+  PartPreview,
   Project,
   RepairResult,
   ReviewReport,
@@ -36,6 +39,14 @@ export function fetchCommandCatalogue(): Promise<GrammarCommand[]> {
 
 export function getVehicleMarkers(): Promise<VehicleMarkers> {
   return invoke<VehicleMarkers>("get_vehicle_markers");
+}
+
+export function previewPartParam(
+  id: number,
+  param: string,
+  value: number,
+): Promise<PartPreview> {
+  return invoke<PartPreview>("preview_part_param", { id, param, value });
 }
 
 export function dispatchCommand(command: Command): Promise<DocumentState> {
@@ -74,6 +85,12 @@ export function solveReview(targetApogeeM: number): Promise<RepairResult> {
   return invoke<RepairResult>("solve_review", { targetApogeeM });
 }
 
+/** Deterministic flight-readiness report (Markdown). Structural and rule
+ *  sections degrade to "not yet computed" when the review can't run. */
+export function fetchReadiness(targetApogeeM: number): Promise<string> {
+  return invoke<string>("flight_readiness", { targetApogeeM });
+}
+
 export function runDispersion(
   design: Design,
   request: DispersionRequest,
@@ -83,6 +100,22 @@ export function runDispersion(
 
 export function consoleExec(line: string): Promise<DocumentState> {
   return invoke<DocumentState>("console_exec", { line });
+}
+
+export function proposeCommands(lines: string[]): Promise<CommandProposal> {
+  return invoke<CommandProposal>("propose_commands", { lines });
+}
+
+export function fetchCounterfactualReview(lines: string[]): Promise<CounterfactualReview> {
+  return invoke<CounterfactualReview>("counterfactual_review", { lines });
+}
+
+export function applyProposal(lines: string[]): Promise<DocumentState> {
+  return invoke<DocumentState>("apply_proposal", { lines });
+}
+
+export function importAtmosphere(name: string, csv: string): Promise<DocumentState> {
+  return invoke<DocumentState>("import_atmosphere", { name, csv });
 }
 
 export function fetchSessionJournal(): Promise<string> {

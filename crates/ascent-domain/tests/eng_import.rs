@@ -30,7 +30,10 @@ fn manifest_lists_all_five_samples() {
     let manifest: serde_json::Value = serde_json::from_str(MANIFEST).unwrap();
     let samples = manifest["samples"].as_array().unwrap();
     assert_eq!(samples.len(), 5);
-    let files: Vec<&str> = samples.iter().map(|s| s["file"].as_str().unwrap()).collect();
+    let files: Vec<&str> = samples
+        .iter()
+        .map(|s| s["file"].as_str().unwrap())
+        .collect();
     for expected in [
         "estes_b6_cert.eng",
         "estes_c6_cert.eng",
@@ -61,7 +64,11 @@ fn manifest_and_physical_eng_corpus_have_exactly_the_same_files() {
         .join("data/eng-samples");
     let physical_files: BTreeSet<String> = fs::read_dir(&corpus_dir)
         .expect("the corpus directory must be readable")
-        .map(|entry| entry.expect("corpus directory entries must be readable").path())
+        .map(|entry| {
+            entry
+                .expect("corpus directory entries must be readable")
+                .path()
+        })
         .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("eng"))
         .map(|path| {
             path.file_name()
@@ -92,8 +99,7 @@ fn parse_eng_retains_each_exact_raw_header_line() {
     let raw_headers: Vec<Option<String>> = motors
         .iter()
         .map(|motor| {
-            serde_json::to_value(motor)
-                .expect("parsed motor should serialize")["raw_header"]
+            serde_json::to_value(motor).expect("parsed motor should serialize")["raw_header"]
                 .as_str()
                 .map(ToOwned::to_owned)
         })
@@ -111,10 +117,14 @@ fn parse_eng_retains_each_exact_raw_header_line() {
 #[test]
 fn manifest_drives_exact_impulse_and_rejection_expectations_for_full_corpus() {
     let manifest: serde_json::Value = serde_json::from_str(MANIFEST).unwrap();
-    let samples = manifest["samples"].as_array().expect("manifest samples must be an array");
+    let samples = manifest["samples"]
+        .as_array()
+        .expect("manifest samples must be an array");
 
     for sample in samples {
-        let file = sample["file"].as_str().expect("sample must name its fixture");
+        let file = sample["file"]
+            .as_str()
+            .expect("sample must name its fixture");
         let expected = sample["expected"]
             .as_object()
             .unwrap_or_else(|| panic!("manifest sample {file} must declare an expectation"));
@@ -127,7 +137,11 @@ fn manifest_drives_exact_impulse_and_rejection_expectations_for_full_corpus() {
                     .unwrap_or_else(|| panic!("valid sample {file} must declare motors"));
                 let motors = parse_eng(contents, &json!({"fixture": file}))
                     .unwrap_or_else(|err| panic!("valid sample {file} did not parse: {err}"));
-                assert_eq!(motors.len(), expected_motors.len(), "motor count for {file}");
+                assert_eq!(
+                    motors.len(),
+                    expected_motors.len(),
+                    "motor count for {file}"
+                );
 
                 for (motor, expected_motor) in motors.iter().zip(expected_motors) {
                     assert_eq!(
@@ -159,7 +173,8 @@ fn manifest_drives_exact_impulse_and_rejection_expectations_for_full_corpus() {
                             line,
                             expected_error["line"]
                                 .as_u64()
-                                .expect("error expectation must declare a line") as usize,
+                                .expect("error expectation must declare a line")
+                                as usize,
                             "error line for {file}"
                         );
                         match expected_error["class"].as_str() {
@@ -375,7 +390,8 @@ fn parses_multi_entry_file_into_two_motors() {
     assert_eq!(motors[0].designation, "C6");
     assert_eq!(motors[1].designation, "A10T");
     for m in &motors {
-        m.validate().expect("every entry in a multi-motor file must validate");
+        m.validate()
+            .expect("every entry in a multi-motor file must validate");
     }
 }
 
@@ -401,7 +417,10 @@ fn truncated_header_reports_line_number() {
     match err {
         EngImportError::Malformed { line, message } => {
             assert_eq!(line, 2, "header is on line 2 of this fixture");
-            assert!(message.contains("7"), "message should mention the expected field count: {message}");
+            assert!(
+                message.contains("7"),
+                "message should mention the expected field count: {message}"
+            );
         }
     }
 }

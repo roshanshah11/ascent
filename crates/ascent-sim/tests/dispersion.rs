@@ -7,8 +7,10 @@ use ascent_sim::{
 };
 
 fn c6() -> Motor {
-    Motor::from_json(include_str!("../../ascent-domain/data/motors/estes_c6.json"))
-        .expect("bundled C6 must parse")
+    Motor::from_json(include_str!(
+        "../../ascent-domain/data/motors/estes_c6.json"
+    ))
+    .expect("bundled C6 must parse")
 }
 
 fn alpha_iii() -> (Rocket, Environment, PlanarVehicle) {
@@ -22,6 +24,8 @@ fn alpha_iii() -> (Rocket, Environment, PlanarVehicle) {
         recovery: Some(Recovery {
             chute_cd: 0.75,
             chute_area_m2: std::f64::consts::PI * 0.15 * 0.15,
+            drogue: None,
+            main_deploy_altitude_m: None,
         }),
     };
     let env = Environment {
@@ -42,11 +46,26 @@ fn alpha_iii() -> (Rocket, Environment, PlanarVehicle) {
 
 fn standard_vary() -> Vec<Variation> {
     vec![
-        Variation { param: VaryParam::ThrustPct, sigma: 3.0 },
-        Variation { param: VaryParam::CdPct, sigma: 5.0 },
-        Variation { param: VaryParam::WindSpeedMs, sigma: 1.5 },
-        Variation { param: VaryParam::LaunchAngleDeg, sigma: 2.0 },
-        Variation { param: VaryParam::MassG, sigma: 1.0 },
+        Variation {
+            param: VaryParam::ThrustPct,
+            sigma: 3.0,
+        },
+        Variation {
+            param: VaryParam::CdPct,
+            sigma: 5.0,
+        },
+        Variation {
+            param: VaryParam::WindSpeedMs,
+            sigma: 1.5,
+        },
+        Variation {
+            param: VaryParam::LaunchAngleDeg,
+            sigma: 2.0,
+        },
+        Variation {
+            param: VaryParam::MassG,
+            sigma: 1.0,
+        },
     ]
 }
 
@@ -56,7 +75,11 @@ fn same_seed_produces_a_byte_identical_summary() {
     let motor = c6();
     let wind = WindProfile::constant(3.0);
     let config = SimConfig::default();
-    let spec = Dispersion { seed: 42, samples: 25, vary: standard_vary() };
+    let spec = Dispersion {
+        seed: 42,
+        samples: 25,
+        vary: standard_vary(),
+    };
 
     let a = run_dispersion(&rocket, &motor, &env, &vehicle, &wind, &config, &spec).unwrap();
     let b = run_dispersion(&rocket, &motor, &env, &vehicle, &wind, &config, &spec).unwrap();
@@ -73,7 +96,10 @@ fn same_seed_produces_a_byte_identical_summary() {
         &vehicle,
         &wind,
         &config,
-        &Dispersion { seed: 43, ..spec.clone() },
+        &Dispersion {
+            seed: 43,
+            ..spec.clone()
+        },
     )
     .unwrap();
     assert_ne!(
@@ -92,14 +118,20 @@ fn zero_sigma_dispersion_collapses_to_the_single_run() {
     let spec = Dispersion {
         seed: 7,
         samples: 10,
-        vary: standard_vary().into_iter().map(|v| Variation { sigma: 0.0, ..v }).collect(),
+        vary: standard_vary()
+            .into_iter()
+            .map(|v| Variation { sigma: 0.0, ..v })
+            .collect(),
     };
 
     let single = simulate_planar(&rocket, &motor, &env, &vehicle, &wind, &config);
     let summary = run_dispersion(&rocket, &motor, &env, &vehicle, &wind, &config, &spec).unwrap();
 
     for run in &summary.runs {
-        assert_eq!(run.apogee_m, single.apogee_m, "zero sigma must not perturb apogee");
+        assert_eq!(
+            run.apogee_m, single.apogee_m,
+            "zero sigma must not perturb apogee"
+        );
         assert_eq!(run.landing_range_m, single.landing_range_m);
     }
     assert_eq!(summary.apogee_p5_m, summary.apogee_p95_m);
@@ -127,18 +159,32 @@ fn dispersion_spreads_are_physically_sane() {
     let motor = c6();
     let wind = WindProfile::constant(3.0);
     let config = SimConfig::default();
-    let spec = Dispersion { seed: 1234, samples: 50, vary: standard_vary() };
+    let spec = Dispersion {
+        seed: 1234,
+        samples: 50,
+        vary: standard_vary(),
+    };
 
     let s = run_dispersion(&rocket, &motor, &env, &vehicle, &wind, &config, &spec).unwrap();
     assert_eq!(s.runs.len(), 50);
     assert!(s.apogee_p5_m < s.apogee_p50_m && s.apogee_p50_m < s.apogee_p95_m);
     // Nominal apogee ~358 m; ±3% thrust / ±5% Cd should stay well inside ±25%.
-    assert!(s.apogee_p50_m > 250.0 && s.apogee_p50_m < 450.0, "p50 {}", s.apogee_p50_m);
-    assert!(s.apogee_p95_m - s.apogee_p5_m < 0.5 * s.apogee_p50_m, "spread implausibly wide");
+    assert!(
+        s.apogee_p50_m > 250.0 && s.apogee_p50_m < 450.0,
+        "p50 {}",
+        s.apogee_p50_m
+    );
+    assert!(
+        s.apogee_p95_m - s.apogee_p5_m < 0.5 * s.apogee_p50_m,
+        "spread implausibly wide"
+    );
     // 3 m/s mean wind: the fleet lands downwind on average, with real spread.
     assert!(s.landing_mean_m > 0.0, "mean landing {}", s.landing_mean_m);
     assert!(s.landing_ellipse.a_m > 0.0);
-    assert_eq!(s.landing_ellipse.b_m, 0.0, "planar solver has no crossrange");
+    assert_eq!(
+        s.landing_ellipse.b_m, 0.0,
+        "planar solver has no crossrange"
+    );
     // The summary is its own evidence: seed and distributions echoed back.
     assert_eq!(s.seed, 1234);
     assert_eq!(s.vary.len(), 5);
@@ -147,7 +193,11 @@ fn dispersion_spreads_are_physically_sane() {
 #[test]
 fn zero_samples_is_an_error_not_a_panic() {
     let (rocket, env, vehicle) = alpha_iii();
-    let spec = Dispersion { seed: 1, samples: 0, vary: vec![] };
+    let spec = Dispersion {
+        seed: 1,
+        samples: 0,
+        vary: vec![],
+    };
     assert!(run_dispersion(
         &rocket,
         &c6(),
@@ -170,11 +220,19 @@ fn thousand_sample_run_finishes_under_five_seconds_release() {
     let motor = c6();
     let wind = WindProfile::constant(3.0);
     let config = SimConfig::default();
-    let spec = Dispersion { seed: 99, samples: 1000, vary: standard_vary() };
+    let spec = Dispersion {
+        seed: 99,
+        samples: 1000,
+        vary: standard_vary(),
+    };
 
     let start = std::time::Instant::now();
     let s = run_dispersion(&rocket, &motor, &env, &vehicle, &wind, &config, &spec).unwrap();
     let elapsed = start.elapsed();
     assert_eq!(s.runs.len(), 1000);
-    assert!(elapsed.as_secs_f64() < 5.0, "1000 samples took {:?}", elapsed);
+    assert!(
+        elapsed.as_secs_f64() < 5.0,
+        "1000 samples took {:?}",
+        elapsed
+    );
 }

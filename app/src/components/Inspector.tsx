@@ -18,29 +18,34 @@ function Num({
   onChange: (v: number) => void;
 }) {
   return (
-    <label style={{ display: "block", margin: "6px 0" }}>
-      <span style={{ display: "inline-block", width: 150 }}>{label}</span>
-      <input
-        type="number"
-        value={value}
-        step={step ?? 1}
-        style={{ width: 90 }}
-        onChange={(e) => {
-          const v = Number(e.target.value);
-          if (Number.isFinite(v)) onChange(v);
-        }}
-      />
+    <label className="property-row">
+      <span className="property-label">{label}</span>
+      <span className="property-input-wrap">
+        <input
+          type="number"
+          value={value}
+          step={step ?? 1}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            if (Number.isFinite(v)) onChange(v);
+          }}
+        />
+      </span>
     </label>
   );
 }
 
 export default function Inspector({ design, onChange }: Props) {
+  const dualDeploy = design.chute.main_deploy_altitude_m != null;
+
   return (
-    <div>
-      <h3>Rocket</h3>
-      <label style={{ display: "block", margin: "6px 0" }}>
-        <span style={{ display: "inline-block", width: 150 }}>Name</span>
+    <div className="inspector-form">
+      <section className="property-group">
+      <div className="property-group-heading"><span>Vehicle</span><span>01</span></div>
+      <label className="property-row">
+        <span className="property-label">Name</span>
         <input
+          className="property-text"
           value={design.name}
           onChange={(e) => onChange({ ...design, name: e.target.value })}
         />
@@ -67,9 +72,11 @@ export default function Inspector({ design, onChange }: Props) {
         step={0.1}
         onChange={(v) => onChange({ ...design, rail_length_m: v })}
       />
-      <h3>Recovery</h3>
-      <label style={{ display: "block", margin: "6px 0" }}>
-        <span style={{ display: "inline-block", width: 150 }}>Parachute</span>
+      </section>
+      <section className="property-group">
+      <div className="property-group-heading"><span>Recovery system</span><span>02</span></div>
+      <label className="property-row property-toggle-row">
+        <span className="property-label">Parachute</span>
         <input
           type="checkbox"
           checked={design.chute.enabled}
@@ -93,8 +100,69 @@ export default function Inspector({ design, onChange }: Props) {
             step={0.05}
             onChange={(v) => onChange({ ...design, chute: { ...design.chute, cd: v } })}
           />
+          <label className="property-row property-toggle-row">
+            <span className="property-label">Dual deploy</span>
+            <input
+              type="checkbox"
+              checked={dualDeploy}
+              onChange={(e) =>
+                onChange({
+                  ...design,
+                  chute: e.target.checked
+                    ? {
+                        ...design.chute,
+                        main_deploy_altitude_m: 60,
+                        drogue_diameter_cm: 8,
+                        drogue_cd: 0.8,
+                      }
+                    : {
+                        ...design.chute,
+                        main_deploy_altitude_m: null,
+                        drogue_diameter_cm: null,
+                        drogue_cd: null,
+                      },
+                })
+              }
+            />
+          </label>
+          {dualDeploy && (
+            <>
+              <Num
+                label="Main deploy AGL (m)"
+                value={design.chute.main_deploy_altitude_m ?? 60}
+                onChange={(v) =>
+                  onChange({
+                    ...design,
+                    chute: { ...design.chute, main_deploy_altitude_m: v },
+                  })
+                }
+              />
+              <Num
+                label="Drogue diameter (cm)"
+                value={design.chute.drogue_diameter_cm ?? 8}
+                onChange={(v) =>
+                  onChange({
+                    ...design,
+                    chute: { ...design.chute, drogue_diameter_cm: v },
+                  })
+                }
+              />
+              <Num
+                label="Drogue Cd"
+                value={design.chute.drogue_cd ?? 0.8}
+                step={0.05}
+                onChange={(v) =>
+                  onChange({
+                    ...design,
+                    chute: { ...design.chute, drogue_cd: v },
+                  })
+                }
+              />
+            </>
+          )}
         </>
       )}
+      </section>
     </div>
   );
 }

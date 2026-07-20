@@ -6,7 +6,7 @@
 # listener, or client is present in the shipped binary.
 [package]
 name = "ascent-mcp"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

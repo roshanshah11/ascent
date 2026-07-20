@@ -7,8 +7,10 @@ use ascent_sim::{
 };
 
 fn c6() -> Motor {
-    Motor::from_json(include_str!("../../ascent-domain/data/motors/estes_c6.json"))
-        .expect("bundled C6 must parse")
+    Motor::from_json(include_str!(
+        "../../ascent-domain/data/motors/estes_c6.json"
+    ))
+    .expect("bundled C6 must parse")
 }
 
 fn alpha_iii() -> (Rocket, Environment) {
@@ -22,6 +24,8 @@ fn alpha_iii() -> (Rocket, Environment) {
         recovery: Some(Recovery {
             chute_cd: 0.75,
             chute_area_m2: std::f64::consts::PI * 0.15 * 0.15,
+            drogue: None,
+            main_deploy_altitude_m: None,
         }),
     };
     let env = Environment {
@@ -87,7 +91,10 @@ fn calm_wind_planar_reproduces_the_vertical_solver_to_1e9() {
         "no wind, no drift: landing range was {}",
         planar.landing_range_m
     );
-    assert!(planar.max_aoa_deg.abs() < 1e-6, "vertical flight has zero AoA");
+    assert!(
+        planar.max_aoa_deg.abs() < 1e-6,
+        "vertical flight has zero AoA"
+    );
 }
 
 #[test]
@@ -114,7 +121,10 @@ fn crosswind_drift_is_sign_correct_and_matches_ballistic_hand_calc() {
         "nose should tilt upwind after rail exit, got {}°",
         planar.weathercock_deg
     );
-    assert!(planar.max_aoa_deg.abs() > 0.5, "wind must produce a real AoA");
+    assert!(
+        planar.max_aoa_deg.abs() > 0.5,
+        "wind must produce a real AoA"
+    );
 
     // Under canopy the rocket drifts downwind. Hand calc: the chute reaches
     // wind speed in well under a second, so descent drift ≈ wind × descent

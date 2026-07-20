@@ -25,10 +25,16 @@ JSONL. Line 1 is the header; every following line is one operation, in dispatch 
 | `add_part` | `parent` (PartId or null), `kind` (tagged PartKind per `VEHICLE_TREE.md`) | Id allocated at apply time from a monotonic counter; counter state is part of the document, so replay allocates identically. |
 | `remove_part` | `id` | Inverse restores the exact part at its exact index. |
 | `restore_part` | `parent`, `index`, `part` | Concrete re-insertion; appears in journals only via replay of undo/redo internals — normal clients never send it. |
-| `set_part_param` | `id`, `param`, `value` | `param` is the serde field name; the patched part must deserialize into a valid `PartKind`, so typo'd params and wrong types are rejected atomically. `type` is immutable. |
-| `set_sim_param` | `param`, `value` | Flat design fields; dotted `chute.*` paths for the chute. `motor_designation` is refused — use `select_motor`. |
+| `set_part_param` | `id`, `param`, `value` | `param` is the serde field name. `as_built_mass_g` is also accepted at the part wrapper (a non-negative number or `null` to restore the design mass); every other parameter patches `PartKind`. Typo'd params and wrong types are rejected atomically. `type` is immutable. |
+| `set_sim_param` | `param`, `value` | Flat design fields; dotted `chute.*` paths for the chute. Dual-deploy adds `chute.main_deploy_altitude_m`, `chute.drogue_diameter_cm`, `chute.drogue_cd` — each optional (absent = single-deploy) and settable from unset; pass `null` to clear one back to single-deploy. `motor_designation` is refused — use `select_motor`. |
 | `select_motor` | `designation` | |
 | `set_design` | `design` | Coarse replacement: reset and crash-recovery restore. |
+| `batch` | `commands` | One validated approval unit. Nested batches are rejected; one undo restores the entire batch. |
+| `set_telemetry` | `bundles` | Replaces immutable raw and normalized telemetry evidence inline. |
+| `set_alignment` | `alignment` or null | Selects an explicit clock relationship without rewriting source timestamps. |
+| `set_reconciliation` | `reconciliation` or null | Lands phase-aware residual evidence and its selected alignment. |
+
+Dispatch records may carry a `metadata` object with `author`, `source`, `intent`, `affected_requirements`, and `evidence_hashes`. All fields are serde-defaulted, so journals written before v0.6 remain valid. Campaign cinema exposes this metadata but never appends to or mutates the source journal.
 
 ## Semantics
 
@@ -57,6 +63,11 @@ Shape: a kebab-case verb, simple positional tokens, JSON for structured payloads
 | `restore-study <index> <study-json>` | `restore_study` |
 | `set-study-param <id> <param> <value-json>` | `set_study_param` |
 | `set-study-results <id> <results-json\|null>` | `set_study_results` |
+| `set-atmosphere <profile-json\|null>` | `set_atmosphere` |
+| `set-telemetry <bundles-json>` | `set_telemetry` |
+| `set-alignment <artifact-json\|null>` | `set_alignment` |
+| `set-reconciliation <result-json\|null>` | `set_reconciliation` |
+| `batch <commands-json>` | `batch` |
 
 Example: `set-part-param 3 root_chord_m 0.05` · `create-study "landing spread" native 42 {"kind":"dispersion","flights":1000}`
 

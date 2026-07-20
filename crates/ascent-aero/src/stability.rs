@@ -29,11 +29,7 @@ pub fn stability_pct_of_length_at(
 
 /// Margin at ignition and at burnout — the two extremes that matter for
 /// rules checks (motors at the rear: burnout margin ≥ ignition margin).
-pub fn stability_envelope(
-    v: &Vehicle,
-    nose_shape: NoseShape,
-    motor: &Motor,
-) -> (f64, f64) {
+pub fn stability_envelope(v: &Vehicle, nose_shape: NoseShape, motor: &Motor) -> (f64, f64) {
     (
         stability_calibers_at(v, nose_shape, motor, 0.0),
         stability_calibers_at(v, nose_shape, motor, motor.burn_time()),

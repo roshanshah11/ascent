@@ -1,7 +1,7 @@
 {
   "name": "ascent-app",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,6 +11,7 @@
     "tauri:check": "cd ../crates/ascent-app && cargo check"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@tauri-apps/api": "^2.0.0",

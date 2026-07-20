@@ -46,8 +46,8 @@ impl MotorRegistry {
     pub fn bundled() -> Self {
         let mut registry = Self::new();
         for source in BUNDLED_SOURCES {
-            let motor = Motor::from_json(source)
-                .expect("bundled motor JSON must parse and validate");
+            let motor =
+                Motor::from_json(source).expect("bundled motor JSON must parse and validate");
             registry.motors.insert(motor.designation.clone(), motor);
         }
         registry

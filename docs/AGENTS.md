@@ -46,3 +46,7 @@ rtk pip list            rtk pnpm install        rtk npm run <script>
 - `tail` and multi-file `cat`: use raw commands (rtk read is single-file, no tail support)
 - If rtk errors on any command, fall back to the raw command immediately — do not loop on rtk retries
 <!-- /headroom:rtk-instructions -->
+
+## Documentation Direction
+
+All product and UX documentation must follow `PRODUCT_DIRECTION.md`. IREC/DTEG material may appear only as an explicitly scoped rule pack, validation fixture, or historical technical source, never as Ascent's audience or identity.

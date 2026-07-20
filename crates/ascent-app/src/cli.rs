@@ -44,7 +44,9 @@ fn resolve_study<'a>(project: &'a Project, reference: &str) -> Result<&'a Study,
     let mut by_name = project.studies.iter().filter(|s| s.name == reference);
     match (by_name.next(), by_name.next()) {
         (Some(study), None) => Ok(study),
-        (Some(_), Some(_)) => Err(format!("study name '{reference}' is ambiguous — use its id")),
+        (Some(_), Some(_)) => Err(format!(
+            "study name '{reference}' is ambiguous — use its id"
+        )),
         (None, _) => Err(format!(
             "no study '{reference}' in project (studies: {})",
             project
@@ -82,10 +84,7 @@ fn dispersion_request(seed: u64, flights: u32) -> DispersionRequest {
 pub fn run_study(project_toml: &str, study_ref: &str) -> Result<String, String> {
     let project = from_toml(project_toml)?;
     let study = resolve_study(&project, study_ref)?;
-    let design: &Design = project
-        .designs
-        .first()
-        .ok_or("project has no designs")?;
+    let design: &Design = project.designs.first().ok_or("project has no designs")?;
     let vehicle: Vehicle = project.vehicle.clone().unwrap_or_else(reference_vehicle);
 
     let StudyKind::Dispersion { flights } = study.kind else {
@@ -94,13 +93,20 @@ pub fn run_study(project_toml: &str, study_ref: &str) -> Result<String, String> 
             study.name
         ));
     };
-    let summary = dispersion_ipc::run(&vehicle, design, &dispersion_request(study.seed, flights))?;
+    // The headless TOML project format carries no imported atmosphere yet;
+    // CLI runs are analytic-atmosphere runs and hash accordingly.
+    let summary = dispersion_ipc::run(
+        &vehicle,
+        design,
+        None,
+        &dispersion_request(study.seed, flights),
+    )?;
     let output = StudyRunOutput {
         project: project.name.clone(),
         study: study.name.clone(),
         engine: study.engine.clone(),
         seed: study.seed,
-        input_hash: study_input_hash(&vehicle, design, study),
+        input_hash: study_input_hash(&vehicle, design, None, study),
         results: serde_json::to_value(&summary).map_err(|e| e.to_string())?,
     };
     serde_json::to_string_pretty(&output).map_err(|e| e.to_string())
@@ -115,6 +121,11 @@ USAGE:
     ascent-cli run-study <project.ascent> <study-id-or-name>
                                           run a study headless, print
                                           hash-stamped results JSON to stdout
+    ascent-cli create-review-bundle <output.ascent-review>
+                                          create the deterministic golden
+                                          offline review smoke fixture
+    ascent-cli verify-review-bundle <bundle.ascent-review>
+                                          verify hashes and exact journal reopen
 ";
 
 #[cfg(test)]
@@ -175,7 +186,10 @@ mod tests {
         let toml = to_toml(&project_with_study()).unwrap();
         let a = run_study(&toml, "spread").unwrap();
         let b = run_study(&toml, "1").unwrap();
-        assert_eq!(a, b, "same project + study must be byte-identical, by name or id");
+        assert_eq!(
+            a, b,
+            "same project + study must be byte-identical, by name or id"
+        );
 
         let parsed: serde_json::Value = serde_json::from_str(&a).unwrap();
         assert_eq!(parsed["study"], "spread");
@@ -190,6 +204,7 @@ mod tests {
         let expected = study_input_hash(
             &reference_vehicle(),
             &project.designs[0],
+            None,
             &project.studies[0],
         );
         assert_eq!(hash, expected);

@@ -7,17 +7,45 @@
 use crate::command::{apply, Applied, Command};
 use crate::design::Design;
 use crate::study::Study;
+use ascent_domain::evidence::TelemetryBundle;
 use ascent_domain::vehicle::{reference_vehicle, Vehicle};
+use ascent_review::alignment::AlignmentArtifact;
+use ascent_review::reconciliation::ReconciliationResult;
+use ascent_sim::AtmosphereProfile;
 use serde::{Deserialize, Serialize};
 
 pub const JOURNAL_VERSION: u32 = 1;
+
+/// Human and machine provenance attached to an engineering decision.
+/// Empty fields mean the caller used the legacy dispatcher; they are kept
+/// explicit so old journals remain readable without inventing authorship.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionMetadata {
+    #[serde(default)]
+    pub author: String,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub intent: String,
+    #[serde(default)]
+    pub affected_requirements: Vec<String>,
+    #[serde(default)]
+    pub evidence_hashes: Vec<String>,
+}
 
 /// One journaled operation. Undo/redo are journaled too — a session
 /// record that skipped them could not reproduce the final state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
+// Keep the established flat JSON journal schema. Boxing `command` would only
+// save transient stack space while complicating the public replay contract.
+#[allow(clippy::large_enum_variant)]
 pub enum JournalOp {
-    Dispatch { command: Command },
+    Dispatch {
+        command: Command,
+        #[serde(default, skip_serializing_if = "DecisionMetadata::is_empty")]
+        metadata: DecisionMetadata,
+    },
     Undo,
     Redo,
 }
@@ -35,6 +63,17 @@ pub struct Document {
     pub vehicle: Vehicle,
     pub design: Design,
     pub studies: Vec<Study>,
+    /// Imported wind/density profile (v0.5). None = analytic defaults.
+    /// Serde-defaulted so pre-v0.5 project files load unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub atmosphere: Option<AtmosphereProfile>,
+    /// Immutable raw and normalized avionics evidence (v0.6).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub telemetry: Vec<TelemetryBundle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alignment: Option<AlignmentArtifact>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reconciliation: Option<ReconciliationResult>,
     next_part_id: u32,
     next_study_id: u32,
     past: Vec<AppliedPair>,
@@ -55,6 +94,14 @@ pub struct DocumentState {
     pub vehicle: Vehicle,
     pub design: Design,
     pub studies: Vec<Study>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub atmosphere: Option<AtmosphereProfile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub telemetry: Vec<TelemetryBundle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alignment: Option<AlignmentArtifact>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reconciliation: Option<ReconciliationResult>,
     pub can_undo: bool,
     pub can_redo: bool,
 }
@@ -67,6 +114,10 @@ impl Default for Document {
             vehicle,
             design: Design::reference(),
             studies: Vec::new(),
+            atmosphere: None,
+            telemetry: Vec::new(),
+            alignment: None,
+            reconciliation: None,
             next_part_id,
             next_study_id: 1,
             past: Vec::new(),
@@ -89,17 +140,32 @@ fn vehicle_max_id(v: &Vehicle) -> u32 {
 
 impl Document {
     pub fn dispatch(&mut self, cmd: Command) -> Result<(), String> {
+        self.dispatch_with_metadata(cmd, DecisionMetadata::default())
+    }
+
+    pub fn dispatch_with_metadata(
+        &mut self,
+        cmd: Command,
+        metadata: DecisionMetadata,
+    ) -> Result<(), String> {
         let Applied { forward, inverse } = apply(
             &mut self.vehicle,
             &mut self.design,
             &mut self.studies,
+            &mut self.atmosphere,
+            &mut self.telemetry,
+            &mut self.alignment,
+            &mut self.reconciliation,
             &mut self.next_part_id,
             &mut self.next_study_id,
             cmd.clone(),
         )?;
         self.past.push(AppliedPair { forward, inverse });
         self.future.clear();
-        self.journal.push(JournalOp::Dispatch { command: cmd });
+        self.journal.push(JournalOp::Dispatch {
+            command: cmd,
+            metadata,
+        });
         Ok(())
     }
 
@@ -113,6 +179,10 @@ impl Document {
             &mut self.vehicle,
             &mut self.design,
             &mut self.studies,
+            &mut self.atmosphere,
+            &mut self.telemetry,
+            &mut self.alignment,
+            &mut self.reconciliation,
             &mut scratch_id,
             &mut scratch_study_id,
             pair.inverse.clone(),
@@ -136,6 +206,10 @@ impl Document {
             &mut self.vehicle,
             &mut self.design,
             &mut self.studies,
+            &mut self.atmosphere,
+            &mut self.telemetry,
+            &mut self.alignment,
+            &mut self.reconciliation,
             &mut scratch_id,
             &mut scratch_study_id,
             pair.forward.clone(),
@@ -151,6 +225,10 @@ impl Document {
             vehicle: self.vehicle.clone(),
             design: self.design.clone(),
             studies: self.studies.clone(),
+            atmosphere: self.atmosphere.clone(),
+            telemetry: self.telemetry.clone(),
+            alignment: self.alignment.clone(),
+            reconciliation: self.reconciliation.clone(),
             can_undo: !self.past.is_empty(),
             can_redo: !self.future.is_empty(),
         }
@@ -191,8 +269,8 @@ impl Document {
             let op: JournalOp =
                 serde_json::from_str(line).map_err(|e| format!("line {}: {e}", i + 1))?;
             match op {
-                JournalOp::Dispatch { command } => doc
-                    .dispatch(command)
+                JournalOp::Dispatch { command, metadata } => doc
+                    .dispatch_with_metadata(command, metadata)
                     .map_err(|e| format!("line {}: {e}", i + 1))?,
                 JournalOp::Undo => {
                     doc.undo();
@@ -208,6 +286,16 @@ impl Document {
     /// Canonical byte form for determinism checks.
     pub fn canonical_bytes(&self) -> String {
         serde_json::to_string(self).expect("document serializes")
+    }
+}
+
+impl DecisionMetadata {
+    fn is_empty(&self) -> bool {
+        self.author.is_empty()
+            && self.source.is_empty()
+            && self.intent.is_empty()
+            && self.affected_requirements.is_empty()
+            && self.evidence_hashes.is_empty()
     }
 }
 
@@ -244,6 +332,75 @@ mod tests {
         assert_eq!(doc.design.cd, 0.60);
         assert!(doc.redo());
         assert_eq!(doc.canonical_bytes(), after);
+    }
+
+    #[test]
+    fn dual_deploy_chute_params_set_journal_and_replay_byte_identically() {
+        // The dual-deploy fields are skipped when absent, so setting them
+        // via the dotted chute path exercises the "prior value was null"
+        // branch in patch_design. All three must journal and replay clean.
+        let mut doc = Document::default();
+        for (param, value) in [
+            ("chute.main_deploy_altitude_m", json!(60.0)),
+            ("chute.drogue_diameter_cm", json!(8.0)),
+            ("chute.drogue_cd", json!(0.8)),
+        ] {
+            doc.dispatch(Command::SetSimParam {
+                param: param.into(),
+                value,
+            })
+            .unwrap();
+        }
+        assert_eq!(doc.design.chute.main_deploy_altitude_m, Some(60.0));
+
+        let replayed = Document::replay(&doc.journal_jsonl()).unwrap();
+        assert_eq!(replayed.canonical_bytes(), doc.canonical_bytes());
+
+        // Clearing back to single-deploy (null) then undoing restores the
+        // exact prior chute config (the inverse carries the old value).
+        doc.dispatch(Command::SetSimParam {
+            param: "chute.main_deploy_altitude_m".into(),
+            value: json!(null),
+        })
+        .unwrap();
+        assert_eq!(doc.design.chute.main_deploy_altitude_m, None);
+        assert!(doc.undo());
+        assert_eq!(doc.design.chute.main_deploy_altitude_m, Some(60.0));
+    }
+
+    #[test]
+    fn telemetry_import_is_one_journaled_undoable_replayable_mutation() {
+        use ascent_domain::telemetry::{builtin_schema, BuiltinSchema, TelemetryImporter};
+
+        let bundle = TelemetryImporter::ingest(
+            &builtin_schema(BuiltinSchema::BlueRavenCsv),
+            b"time_s,altitude_m\n0,0\n0.1,2.5\n",
+        )
+        .unwrap();
+        let mut doc = Document::default();
+        let before = doc.canonical_bytes();
+        doc.dispatch(Command::SetTelemetry {
+            bundles: vec![bundle],
+        })
+        .unwrap();
+        let imported = doc.canonical_bytes();
+        assert_eq!(doc.telemetry.len(), 1);
+        assert!(doc.undo());
+        assert!(doc.telemetry.is_empty());
+        assert_eq!(doc.vehicle, Document::default().vehicle);
+        assert_ne!(
+            doc.canonical_bytes(),
+            before,
+            "undo history remains explicit state"
+        );
+        assert!(doc.redo());
+        assert_eq!(doc.canonical_bytes(), imported);
+        assert_eq!(
+            Document::replay(&doc.journal_jsonl())
+                .unwrap()
+                .canonical_bytes(),
+            imported
+        );
     }
 
     #[test]
@@ -287,7 +444,10 @@ mod tests {
             value: json!(0.06),
         })
         .unwrap();
-        match &crate::command::find_part_mut(&mut doc.vehicle, PartId(3)).unwrap().kind {
+        match &crate::command::find_part_mut(&mut doc.vehicle, PartId(3))
+            .unwrap()
+            .kind
+        {
             PartKind::FinSet { root_chord_m, .. } => assert_eq!(*root_chord_m, 0.06),
             other => panic!("unexpected kind {other:?}"),
         }
@@ -449,7 +609,8 @@ mod tests {
         // (Compare the studies, not canonical bytes — undoing a delete
         // legitimately leaves the redo stack populated.)
         let with_results = doc.studies.clone();
-        doc.dispatch(Command::DeleteStudy { id: StudyId(1) }).unwrap();
+        doc.dispatch(Command::DeleteStudy { id: StudyId(1) })
+            .unwrap();
         assert!(doc.studies.is_empty());
         assert!(doc.undo());
         assert_eq!(doc.studies, with_results);
@@ -490,7 +651,12 @@ mod tests {
         create_dispersion_study(&mut doc);
 
         // Land results stamped with the current input hash.
-        let hash = study_input_hash(&doc.vehicle, &doc.design, &doc.studies[0]);
+        let hash = study_input_hash(
+            &doc.vehicle,
+            &doc.design,
+            doc.atmosphere.as_ref(),
+            &doc.studies[0],
+        );
         doc.dispatch(Command::SetStudyResults {
             id: StudyId(1),
             results: Some(StudyResults {
@@ -500,7 +666,7 @@ mod tests {
         })
         .unwrap();
         assert!(
-            !doc.studies[0].is_stale(&doc.vehicle, &doc.design),
+            !doc.studies[0].is_stale(&doc.vehicle, &doc.design, doc.atmosphere.as_ref()),
             "freshly stamped results are current"
         );
 
@@ -512,13 +678,13 @@ mod tests {
         })
         .unwrap();
         assert!(
-            doc.studies[0].is_stale(&doc.vehicle, &doc.design),
+            doc.studies[0].is_stale(&doc.vehicle, &doc.design, doc.atmosphere.as_ref()),
             "tree edit must invalidate stored study results"
         );
 
         // Undo the edit → results are provably current again.
         doc.undo();
-        assert!(!doc.studies[0].is_stale(&doc.vehicle, &doc.design));
+        assert!(!doc.studies[0].is_stale(&doc.vehicle, &doc.design, doc.atmosphere.as_ref()));
     }
 
     #[test]
@@ -540,7 +706,8 @@ mod tests {
             seed: 0,
         })
         .unwrap();
-        doc.dispatch(Command::DeleteStudy { id: StudyId(1) }).unwrap();
+        doc.dispatch(Command::DeleteStudy { id: StudyId(1) })
+            .unwrap();
         doc.undo();
         doc.redo();
         let replayed = Document::replay(&doc.journal_jsonl()).unwrap();
@@ -553,7 +720,8 @@ mod tests {
         let mut recovered = Design::reference();
         recovered.dry_mass_g = 40.0;
         recovered.name = "Recovered".into();
-        doc.dispatch(Command::SetDesign { design: recovered }).unwrap();
+        doc.dispatch(Command::SetDesign { design: recovered })
+            .unwrap();
         assert_eq!(doc.design.dry_mass_g, 40.0);
         doc.undo();
         assert_eq!(doc.design.dry_mass_g, 34.0);

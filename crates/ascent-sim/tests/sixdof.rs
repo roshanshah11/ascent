@@ -26,6 +26,8 @@ fn alpha_iii() -> (Rocket, Environment) {
             recovery: Some(Recovery {
                 chute_cd: 0.75,
                 chute_area_m2: std::f64::consts::PI * 0.15 * 0.15,
+                drogue: None,
+                main_deploy_altitude_m: None,
             }),
         },
         Environment {

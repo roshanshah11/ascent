@@ -195,8 +195,17 @@ pub fn run_dispersion(
     config: &SimConfig,
     dispersion: &Dispersion,
 ) -> Result<DispersionSummary, String> {
-    run_dispersion_observed(rocket, motor, env, vehicle, wind, config, dispersion, |_, _| true)
-        .map(|outcome| outcome.expect("uncancellable run cannot be cancelled"))
+    run_dispersion_observed(
+        rocket,
+        motor,
+        env,
+        vehicle,
+        wind,
+        config,
+        dispersion,
+        |_, _| true,
+    )
+    .map(|outcome| outcome.expect("uncancellable run cannot be cancelled"))
 }
 
 /// Same run, but observable: `on_progress(completed, total)` is called
@@ -225,7 +234,8 @@ pub fn run_dispersion_observed(
         if !on_progress(i, dispersion.samples) {
             return Ok(None);
         }
-        let (r, m, v, w) = perturbed_inputs(&mut rng, rocket, motor, vehicle, wind, &dispersion.vary);
+        let (r, m, v, w) =
+            perturbed_inputs(&mut rng, rocket, motor, vehicle, wind, &dispersion.vary);
         let flight = simulate_planar(&r, &m, env, &v, &w, config);
         runs.push(CompactRun {
             apogee_m: flight.apogee_m,

@@ -1,8 +1,8 @@
-# IREC 2026 flight-review rule pack
+# IREC 2026 optional requirements profile
 
-`irec-2026.json` is a source-traceable set of numeric rules and operating conditions for an Ascent competition flight review. It formalizes the compact example under `docs/FULL_BUILD_RESEARCH.md` → **Competition Flight Review** into one record per constraint.
+`irec-2026.json` is a source-traceable, versioned example of Ascent's generic requirements-profile system. It is retained as an optional engineering fixture because its official sources provide concrete vehicle, trajectory, stability, recovery, and reporting constraints. It does not define Ascent's audience or default product identity.
 
-The pack is an engineering aid, not official flight approval. IREC officials, the Range Safety Officer, and the current official documents remain authoritative.
+When this optional profile is active, its output is an engineering aid, not official approval. IREC officials, the Range Safety Officer, and the current official documents remain authoritative.
 
 ## Primary sources
 

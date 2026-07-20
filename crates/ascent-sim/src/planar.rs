@@ -130,6 +130,9 @@ enum Phase {
     Descent,
 }
 
+// Keeping the physical inputs explicit makes each RK4 evaluation auditable at
+// the call site; bundling them into an opaque context would hide dependencies.
+#[allow(clippy::too_many_arguments)]
 fn derivative(
     t: f64,
     s: State,
@@ -144,7 +147,11 @@ fn derivative(
     let mass = rocket.dry_mass_kg + motor.mass_at(t);
     let thrust = motor.thrust_at(t);
     let rho = env.atmosphere.density_at(z.max(0.0));
-    let body_cda = rocket.drag.as_ref().map(|d| d.cd * d.reference_area_m2).unwrap_or(0.0);
+    let body_cda = rocket
+        .drag
+        .as_ref()
+        .map(|d| d.cd * d.reference_area_m2)
+        .unwrap_or(0.0);
 
     match phase {
         Phase::Pad | Phase::Rail => {
@@ -184,7 +191,11 @@ fn derivative(
                 // Normal force (linear in α, Barrowman regime) along the
                 // body-perpendicular (cosθ, −sinθ); positive α pushes the
                 // vehicle downwind while the moment turns the nose upwind.
-                let n_force = 0.5 * rho * v * v * vehicle.reference_area_m2
+                let n_force = 0.5
+                    * rho
+                    * v
+                    * v
+                    * vehicle.reference_area_m2
                     * vehicle.cn_alpha_per_rad
                     * alpha;
                 ax += n_force * cos_t / mass;
@@ -205,7 +216,7 @@ fn derivative(
             let chute_cda = rocket
                 .recovery
                 .as_ref()
-                .map(|r| r.chute_cd * r.chute_area_m2)
+                .map(|r| r.descent_cda(z.max(0.0)))
                 .unwrap_or(0.0);
             let cda = body_cda + chute_cda;
             let (mut ax, mut az) = (0.0, -env.gravity_ms2);
@@ -273,6 +284,14 @@ pub fn simulate_planar(
     let mut rail_exit_t = f64::NAN;
     let mut apogee = (f64::NAN, f64::NAN); // (time, altitude)
     let mut landing = (f64::NAN, f64::NAN); // (time, range)
+                                            // Dual-deploy: descending through this altitude restarts the step so
+                                            // the main's drag applies from exactly the deploy point. Must mirror
+                                            // simulate_planar_staged's stepping bit-for-bit (1e-9 equivalence).
+    let main_deploy_m = rocket
+        .recovery
+        .as_ref()
+        .and_then(|r| r.main_deploy_altitude_m);
+    let mut main_deployed = false;
 
     while t < config.max_time_s {
         if phase == Phase::Pad {
@@ -332,6 +351,10 @@ pub fn simulate_planar(
                 ap[i] = s[i] + frac * (next[i] - s[i]);
             }
             apogee = (apogee_t, ap[1]);
+            // Apogee already below the deploy altitude: main opens now.
+            if main_deploy_m.is_some_and(|d| ap[1] <= d) {
+                main_deployed = true;
+            }
             // Restart the step from apogee so chute drag applies from the
             // true apogee point (mirrors the vertical solver).
             ap[3] = 0.0;
@@ -340,6 +363,25 @@ pub fn simulate_planar(
             phase = Phase::Descent;
             steps += 1;
             continue;
+        }
+
+        // Main deploy: descending through the configured altitude.
+        if phase == Phase::Descent && !main_deployed {
+            if let Some(deploy_m) = main_deploy_m {
+                if s[1] > deploy_m && next[1] <= deploy_m {
+                    let frac = ((s[1] - deploy_m) / (s[1] - next[1])).clamp(0.0, 1.0);
+                    let mut d = [0.0; 6];
+                    for i in 0..6 {
+                        d[i] = s[i] + frac * (next[i] - s[i]);
+                    }
+                    d[1] = deploy_m;
+                    s = d;
+                    t += frac * dt;
+                    main_deployed = true;
+                    steps += 1;
+                    continue;
+                }
+            }
         }
 
         // Landing: altitude crosses zero on the way down.
@@ -461,6 +503,10 @@ pub fn simulate_planar_staged(
     let mut apogee = (f64::NAN, f64::NAN);
     let mut landing = (f64::NAN, f64::NAN);
     let mut events: Vec<EventSummary> = Vec::new();
+    // Dual-deploy stepping must match simulate_planar bit-for-bit — the
+    // single-stage 1e-9 equivalence test covers this path too.
+    let main_deploy_m = recovery.as_ref().and_then(|r| r.main_deploy_altitude_m);
+    let mut main_deployed = false;
 
     let event = |kind: &str, t: f64, s: &State| EventSummary {
         kind: kind.into(),
@@ -566,6 +612,10 @@ pub fn simulate_planar_staged(
                 }
                 apogee = (apogee_t, ap[1]);
                 events.push(event("Apogee", apogee_t, &ap));
+                if main_deploy_m.is_some_and(|d| ap[1] <= d) {
+                    main_deployed = true;
+                    events.push(event("MainDeploy", apogee_t, &ap));
+                }
                 ap[3] = 0.0;
                 s = ap;
                 let advanced = apogee_t - t_abs;
@@ -574,6 +624,28 @@ pub fn simulate_planar_staged(
                 phase = Phase::Descent;
                 steps += 1;
                 continue;
+            }
+
+            // Main deploy: descending through the configured altitude.
+            if phase == Phase::Descent && !main_deployed {
+                if let Some(deploy_m) = main_deploy_m {
+                    if s[1] > deploy_m && next[1] <= deploy_m {
+                        let frac = ((s[1] - deploy_m) / (s[1] - next[1])).clamp(0.0, 1.0);
+                        let mut d = [0.0; 6];
+                        for i in 0..6 {
+                            d[i] = s[i] + frac * (next[i] - s[i]);
+                        }
+                        d[1] = deploy_m;
+                        s = d;
+                        let advanced = frac * step;
+                        t_abs += advanced;
+                        tau += advanced;
+                        main_deployed = true;
+                        events.push(event("MainDeploy", t_abs, &s));
+                        steps += 1;
+                        continue;
+                    }
+                }
             }
 
             if phase == Phase::Descent && s[1] > 0.0 && next[1] <= 0.0 {
@@ -675,7 +747,11 @@ pub fn planar_convergence(
         run(config.dt_s / 2.0),
         run(config.dt_s / 4.0),
     ];
-    let apogee = [results[0].apogee_m, results[1].apogee_m, results[2].apogee_m];
+    let apogee = [
+        results[0].apogee_m,
+        results[1].apogee_m,
+        results[2].apogee_m,
+    ];
     let range = [
         results[0].landing_range_m,
         results[1].landing_range_m,

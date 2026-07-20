@@ -15,12 +15,10 @@ use std::sync::{mpsc, Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use crate::design::Design;
 use crate::dispersion_ipc::{self, DispersionRequest};
 use crate::document::Document;
 use crate::study::{study_input_hash, Study, StudyId, StudyKind, StudyResults};
 use crate::Command;
-use ascent_domain::vehicle::Vehicle;
 use ascent_sim::{Variation, VaryParam};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -206,13 +204,19 @@ pub fn run_study_now(doc: &mut Document, study_id: StudyId) -> Result<(), String
         .ok_or_else(|| format!("no study {}", study_id.0))?
         .clone();
     runnable(&study)?;
-    let input_hash = study_input_hash(&doc.vehicle, &doc.design, &study);
+    let input_hash = study_input_hash(&doc.vehicle, &doc.design, doc.atmosphere.as_ref(), &study);
     let StudyKind::Dispersion { flights } = study.kind else {
         return Err("study kind is not runnable yet".into());
     };
     let request = dispersion_request(study.seed, flights);
-    let summary = dispersion_ipc::run_observed(&doc.vehicle, &doc.design, &request, |_, _| true)?
-        .ok_or("run cancelled")?;
+    let summary = dispersion_ipc::run_observed(
+        &doc.vehicle,
+        &doc.design,
+        doc.atmosphere.as_ref(),
+        &request,
+        |_, _| true,
+    )?
+    .ok_or("run cancelled")?;
     let data = serde_json::to_value(&summary).map_err(|e| format!("summary serialize: {e}"))?;
     doc.dispatch(Command::SetStudyResults {
         id: study_id,
@@ -268,38 +272,52 @@ fn run_one(
     // Snapshot the inputs once. The run computes from this snapshot; the
     // stamped hash describes it, so edits made mid-run correctly leave
     // the landed results marked stale.
-    let (vehicle, design, study): (Vehicle, Design, Study) = {
+    let (vehicle, design, study, atmosphere) = {
         let doc = lock(doc);
         let Some(study) = doc.studies.iter().find(|s| s.id == ticket.study_id) else {
             drop(doc);
             set_status(JobStatus::Failed, Some("study was deleted".into()));
             return;
         };
-        (doc.vehicle.clone(), doc.design.clone(), study.clone())
+        (
+            doc.vehicle.clone(),
+            doc.design.clone(),
+            study.clone(),
+            doc.atmosphere.clone(),
+        )
     };
-    let input_hash = study_input_hash(&vehicle, &design, &study);
+    let input_hash = study_input_hash(&vehicle, &design, atmosphere.as_ref(), &study);
 
     let StudyKind::Dispersion { flights } = study.kind else {
-        set_status(JobStatus::Failed, Some("study kind is not runnable yet".into()));
+        set_status(
+            JobStatus::Failed,
+            Some("study kind is not runnable yet".into()),
+        );
         return;
     };
     let request = dispersion_request(study.seed, flights);
 
     let cancel = ticket.cancel.clone();
-    let outcome = dispersion_ipc::run_observed(&vehicle, &design, &request, |completed, total| {
-        if cancel.load(Ordering::Relaxed) {
-            return false;
-        }
-        if completed % PROGRESS_STRIDE == 0 || completed == total {
-            sink(JobEvent::Progress {
-                job_id: ticket.id,
-                study_id: ticket.study_id,
-                completed,
-                total,
-            });
-        }
-        true
-    });
+    let outcome = dispersion_ipc::run_observed(
+        &vehicle,
+        &design,
+        atmosphere.as_ref(),
+        &request,
+        |completed, total| {
+            if cancel.load(Ordering::Relaxed) {
+                return false;
+            }
+            if completed % PROGRESS_STRIDE == 0 || completed == total {
+                sink(JobEvent::Progress {
+                    job_id: ticket.id,
+                    study_id: ticket.study_id,
+                    completed,
+                    total,
+                });
+            }
+            true
+        },
+    );
 
     match outcome {
         Err(e) => set_status(JobStatus::Failed, Some(e)),
@@ -342,14 +360,18 @@ mod tests {
         Arc::new(Mutex::new(doc))
     }
 
-    fn wait_done(events: &mpsc::Receiver<JobEvent>) -> (JobStatus, Option<String>, Vec<(u32, u32)>) {
+    fn wait_done(
+        events: &mpsc::Receiver<JobEvent>,
+    ) -> (JobStatus, Option<String>, Vec<(u32, u32)>) {
         let mut progress = Vec::new();
         loop {
             match events
                 .recv_timeout(Duration::from_secs(30))
                 .expect("job must finish")
             {
-                JobEvent::Progress { completed, total, .. } => progress.push((completed, total)),
+                JobEvent::Progress {
+                    completed, total, ..
+                } => progress.push((completed, total)),
                 JobEvent::Done { status, error, .. } => return (status, error, progress),
             }
         }
@@ -386,9 +408,9 @@ mod tests {
         let results = study.results.as_ref().expect("results landed");
         assert_eq!(
             results.input_hash,
-            study_input_hash(&doc.vehicle, &doc.design, study)
+            study_input_hash(&doc.vehicle, &doc.design, doc.atmosphere.as_ref(), study)
         );
-        assert!(!study.is_stale(&doc.vehicle, &doc.design));
+        assert!(!study.is_stale(&doc.vehicle, &doc.design, doc.atmosphere.as_ref()));
         assert_eq!(results.data["samples"], 1000);
         assert_eq!(runner.jobs()[0].status, JobStatus::Done);
         assert_eq!(job, JobId(1));
@@ -465,6 +487,9 @@ mod tests {
         assert!(err.contains("not runnable"), "{err}");
         let err = runner.enqueue(StudyId(9)).unwrap_err();
         assert!(err.contains("no study"), "{err}");
-        assert!(runner.jobs().is_empty(), "rejected jobs never enter the queue");
+        assert!(
+            runner.jobs().is_empty(),
+            "rejected jobs never enter the queue"
+        );
     }
 }

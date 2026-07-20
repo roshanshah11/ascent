@@ -8,6 +8,7 @@
 
 use crate::design::Design;
 use ascent_domain::vehicle::Vehicle;
+use ascent_sim::AtmosphereProfile;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -17,9 +18,18 @@ pub struct StudyId(pub u32);
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StudyKind {
     SingleFlight,
-    Dispersion { flights: u32 },
-    MotorTrade { candidates: Vec<String> },
-    StabilitySweep { param: String, from: f64, to: f64, steps: u32 },
+    Dispersion {
+        flights: u32,
+    },
+    MotorTrade {
+        candidates: Vec<String>,
+    },
+    StabilitySweep {
+        param: String,
+        from: f64,
+        to: f64,
+        steps: u32,
+    },
 }
 
 /// A completed study's output. `data` is the engine's summary payload
@@ -45,23 +55,39 @@ pub struct Study {
 /// The hash a fresh run of this study would stamp on its results: the
 /// canonical content hash of everything the run depends on. Results are
 /// current exactly when their stored hash equals this.
-pub fn study_input_hash(vehicle: &Vehicle, design: &Design, study: &Study) -> String {
-    ascent_sim::content_hash(&serde_json::json!({
+pub fn study_input_hash(
+    vehicle: &Vehicle,
+    design: &Design,
+    atmosphere: Option<&AtmosphereProfile>,
+    study: &Study,
+) -> String {
+    let mut inputs = serde_json::json!({
         "vehicle": vehicle,
         "design": design,
         "kind": study.kind,
         "engine": study.engine,
         "seed": study.seed,
-    }))
+    });
+    // Folded in only when a profile is imported: hashes of profile-free
+    // documents (including the golden pin) are byte-stable across v0.5.
+    if let Some(profile) = atmosphere {
+        inputs["atmosphere"] = serde_json::to_value(profile).expect("profile serializes");
+    }
+    ascent_sim::content_hash(&inputs)
 }
 
 impl Study {
     /// True when stored results exist but no longer match the inputs.
     /// A study with no results is "not run", not stale.
-    pub fn is_stale(&self, vehicle: &Vehicle, design: &Design) -> bool {
+    pub fn is_stale(
+        &self,
+        vehicle: &Vehicle,
+        design: &Design,
+        atmosphere: Option<&AtmosphereProfile>,
+    ) -> bool {
         match &self.results {
             None => false,
-            Some(r) => r.input_hash != study_input_hash(vehicle, design, self),
+            Some(r) => r.input_hash != study_input_hash(vehicle, design, atmosphere, self),
         }
     }
 }

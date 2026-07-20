@@ -10,13 +10,25 @@
 
 use crate::design::Design;
 use crate::study::{Study, StudyId, StudyKind, StudyResults};
+use ascent_domain::evidence::TelemetryBundle;
 use ascent_domain::vehicle::{Part, PartId, PartKind, Vehicle};
+use ascent_review::alignment::AlignmentArtifact;
+use ascent_review::reconciliation::ReconciliationResult;
+use ascent_sim::AtmosphereProfile;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
+// Review artifacts are intentionally inline in the journal so replay never
+// depends on a second persistence store. Keep the stable flat JSON schema.
+#[allow(clippy::large_enum_variant)]
 pub enum Command {
+    /// One atomic approval unit. All children validate on cloned state; the
+    /// journal, undo stack, and external agent seam observe one command.
+    Batch {
+        commands: Vec<Command>,
+    },
     AddPart {
         parent: Option<PartId>,
         kind: PartKind,
@@ -84,6 +96,25 @@ pub enum Command {
         id: StudyId,
         results: Option<StudyResults>,
     },
+    /// Install (or clear, with None) the document's imported atmosphere
+    /// profile (v0.5). The profile's data rides inline in the command, so
+    /// journal replay needs no file and no network — ever.
+    SetAtmosphere {
+        profile: Option<AtmosphereProfile>,
+    },
+    /// Replace the document telemetry set as one auditable mutation. Raw
+    /// source bytes ride in each bundle, so replay never re-reads a file.
+    SetTelemetry {
+        bundles: Vec<TelemetryBundle>,
+    },
+    /// Select one auditable clock relationship; raw source clocks remain untouched.
+    SetAlignment {
+        alignment: Option<AlignmentArtifact>,
+    },
+    /// Land or clear the phase-aware reconciliation derived from selected evidence.
+    SetReconciliation {
+        reconciliation: Option<ReconciliationResult>,
+    },
 }
 
 /// Result of applying a command: the concrete forward form (what redo
@@ -101,7 +132,12 @@ pub struct CommandGrammarEntry {
     pub description: &'static str,
 }
 
-const COMMAND_GRAMMAR: [CommandGrammarEntry; 12] = [
+const COMMAND_GRAMMAR: [CommandGrammarEntry; 17] = [
+    CommandGrammarEntry {
+        verb: "batch",
+        usage: "batch <commands-json>",
+        description: "Apply multiple commands as one atomic journal decision",
+    },
     CommandGrammarEntry {
         verb: "add-part",
         usage: "add-part <parent|-> <kind-json>",
@@ -162,6 +198,26 @@ const COMMAND_GRAMMAR: [CommandGrammarEntry; 12] = [
         usage: "set-study-results <id> <results-json|null>",
         description: "Set or clear a study's results",
     },
+    CommandGrammarEntry {
+        verb: "set-atmosphere",
+        usage: "set-atmosphere <profile-json|null>",
+        description: "Set or clear the imported atmosphere profile",
+    },
+    CommandGrammarEntry {
+        verb: "set-telemetry",
+        usage: "set-telemetry <bundles-json>",
+        description: "Replace immutable imported telemetry bundles",
+    },
+    CommandGrammarEntry {
+        verb: "set-alignment",
+        usage: "set-alignment <artifact-json|null>",
+        description: "Select or clear an auditable clock alignment",
+    },
+    CommandGrammarEntry {
+        verb: "set-reconciliation",
+        usage: "set-reconciliation <result-json|null>",
+        description: "Land or clear phase-aware reconciliation evidence",
+    },
 ];
 
 /// The parser-owned command catalogue used by read-only discovery clients.
@@ -169,20 +225,80 @@ pub fn command_grammar() -> &'static [CommandGrammarEntry] {
     &COMMAND_GRAMMAR
 }
 
+// The dispatcher deliberately receives every mutable identity-bearing document
+// component; grouping them would create a second shadow state object.
+#[allow(clippy::too_many_arguments)]
 pub fn apply(
     vehicle: &mut Vehicle,
     design: &mut Design,
     studies: &mut Vec<Study>,
+    atmosphere: &mut Option<AtmosphereProfile>,
+    telemetry: &mut Vec<TelemetryBundle>,
+    alignment: &mut Option<AlignmentArtifact>,
+    reconciliation: &mut Option<ReconciliationResult>,
     next_part_id: &mut u32,
     next_study_id: &mut u32,
     cmd: Command,
 ) -> Result<Applied, String> {
     match cmd {
+        Command::Batch { commands } => {
+            if commands.is_empty() {
+                return Err("batch requires at least one command".into());
+            }
+            if commands
+                .iter()
+                .any(|command| matches!(command, Command::Batch { .. }))
+            {
+                return Err("nested command batches are not canonical".into());
+            }
+            let mut next_vehicle = vehicle.clone();
+            let mut next_design = design.clone();
+            let mut next_studies = studies.clone();
+            let mut next_atmosphere = atmosphere.clone();
+            let mut next_telemetry = telemetry.clone();
+            let mut next_alignment = alignment.clone();
+            let mut next_reconciliation = reconciliation.clone();
+            let mut next_part = *next_part_id;
+            let mut next_study = *next_study_id;
+            let mut forwards = Vec::with_capacity(commands.len());
+            let mut inverses = Vec::with_capacity(commands.len());
+            for command in commands {
+                let applied = apply(
+                    &mut next_vehicle,
+                    &mut next_design,
+                    &mut next_studies,
+                    &mut next_atmosphere,
+                    &mut next_telemetry,
+                    &mut next_alignment,
+                    &mut next_reconciliation,
+                    &mut next_part,
+                    &mut next_study,
+                    command,
+                )?;
+                forwards.push(applied.forward);
+                inverses.push(applied.inverse);
+            }
+            inverses.reverse();
+            *vehicle = next_vehicle;
+            *design = next_design;
+            *studies = next_studies;
+            *atmosphere = next_atmosphere;
+            *telemetry = next_telemetry;
+            *alignment = next_alignment;
+            *reconciliation = next_reconciliation;
+            *next_part_id = next_part;
+            *next_study_id = next_study;
+            Ok(Applied {
+                forward: Command::Batch { commands: forwards },
+                inverse: Command::Batch { commands: inverses },
+            })
+        }
         Command::AddPart { parent, kind } => {
             let id = PartId(*next_part_id);
             let part = Part {
                 id,
                 kind,
+                as_built_mass_g: None,
                 children: vec![],
             };
             let index = insert_part(vehicle, parent, None, part.clone())?;
@@ -225,7 +341,17 @@ pub fn apply(
         }
         Command::SetPartParam { id, param, value } => {
             let part = find_part_mut(vehicle, id).ok_or_else(|| format!("no part {}", id.0))?;
-            let old = patch_kind(&mut part.kind, &param, value.clone())?;
+            let old = if param == "as_built_mass_g" {
+                let next: Option<f64> = serde_json::from_value(value.clone())
+                    .map_err(|e| format!("invalid value for 'as_built_mass_g': {e}"))?;
+                if next.is_some_and(|mass| !mass.is_finite() || mass < 0.0) {
+                    return Err("as_built_mass_g must be finite and non-negative".into());
+                }
+                serde_json::to_value(std::mem::replace(&mut part.as_built_mass_g, next))
+                    .expect("optional mass serializes")
+            } else {
+                patch_kind(&mut part.kind, &param, value.clone())?
+            };
             vehicle.validate()?;
             Ok(Applied {
                 forward: Command::SetPartParam {
@@ -334,6 +460,53 @@ pub fn apply(
                 inverse: Command::SetStudyResults { id, results: old },
             })
         }
+        Command::SetAtmosphere { profile } => {
+            if let Some(p) = &profile {
+                p.validate()?;
+            }
+            let old = std::mem::replace(atmosphere, profile.clone());
+            Ok(Applied {
+                forward: Command::SetAtmosphere { profile },
+                inverse: Command::SetAtmosphere { profile: old },
+            })
+        }
+        Command::SetTelemetry { bundles } => {
+            for bundle in &bundles {
+                bundle.validate()?;
+            }
+            let old = std::mem::replace(telemetry, bundles.clone());
+            Ok(Applied {
+                forward: Command::SetTelemetry { bundles },
+                inverse: Command::SetTelemetry { bundles: old },
+            })
+        }
+        Command::SetAlignment { alignment: next } => {
+            if let Some(artifact) = &next {
+                artifact.validate()?;
+            }
+            let old = std::mem::replace(alignment, next.clone());
+            Ok(Applied {
+                forward: Command::SetAlignment { alignment: next },
+                inverse: Command::SetAlignment { alignment: old },
+            })
+        }
+        Command::SetReconciliation {
+            reconciliation: next,
+        } => {
+            if let Some(result) = &next {
+                result.alignment.validate()?;
+                result.canonical_bytes()?;
+            }
+            let old = std::mem::replace(reconciliation, next.clone());
+            Ok(Applied {
+                forward: Command::SetReconciliation {
+                    reconciliation: next,
+                },
+                inverse: Command::SetReconciliation {
+                    reconciliation: old,
+                },
+            })
+        }
     }
 }
 
@@ -351,6 +524,7 @@ impl Command {
         let json = |v: &dyn ErasedSer| v.to_json();
         // (helper trait below keeps the match arms readable)
         match self {
+            Command::Batch { commands } => format!("batch {}", json(commands)),
             Command::AddPart { parent, kind } => {
                 format!("add-part {} {}", opt_id(parent), json(kind))
             }
@@ -395,6 +569,20 @@ impl Command {
                     None => "null".into(),
                 }
             ),
+            Command::SetAtmosphere { profile } => format!(
+                "set-atmosphere {}",
+                match profile {
+                    Some(p) => p.to_json(),
+                    None => "null".into(),
+                }
+            ),
+            Command::SetTelemetry { bundles } => {
+                format!("set-telemetry {}", json(bundles))
+            }
+            Command::SetAlignment { alignment } => format!("set-alignment {}", json(alignment)),
+            Command::SetReconciliation { reconciliation } => {
+                format!("set-reconciliation {}", json(reconciliation))
+            }
         }
     }
 
@@ -406,6 +594,9 @@ impl Command {
             return Err("empty command".into());
         }
         match verb {
+            "batch" => Ok(Command::Batch {
+                commands: parse_json("command batch", rest)?,
+            }),
             "add-part" => {
                 let (parent, kind_json) = split_token(rest);
                 Ok(Command::AddPart {
@@ -488,6 +679,18 @@ impl Command {
                     results: parse_json("results", results_json)?,
                 })
             }
+            "set-atmosphere" => Ok(Command::SetAtmosphere {
+                profile: parse_json("atmosphere profile", rest)?,
+            }),
+            "set-telemetry" => Ok(Command::SetTelemetry {
+                bundles: parse_json("telemetry bundles", rest)?,
+            }),
+            "set-alignment" => Ok(Command::SetAlignment {
+                alignment: parse_json("alignment artifact", rest)?,
+            }),
+            "set-reconciliation" => Ok(Command::SetReconciliation {
+                reconciliation: parse_json("reconciliation result", rest)?,
+            }),
             other => Err(format!("unknown command '{other}'")),
         }
     }
@@ -594,7 +797,8 @@ fn patch_study(study: &mut Study, param: &str, value: Value) -> Result<Value, St
         .cloned()
         .ok_or_else(|| format!("study has no parameter '{param}'"))?;
     map.insert(param.to_string(), value);
-    *study = serde_json::from_value(json).map_err(|e| format!("invalid value for '{param}': {e}"))?;
+    *study =
+        serde_json::from_value(json).map_err(|e| format!("invalid value for '{param}': {e}"))?;
     Ok(old)
 }
 
@@ -620,10 +824,7 @@ fn insert_part(
     Ok(at)
 }
 
-fn remove_part(
-    vehicle: &mut Vehicle,
-    id: PartId,
-) -> Result<(Option<PartId>, usize, Part), String> {
+fn remove_part(vehicle: &mut Vehicle, id: PartId) -> Result<(Option<PartId>, usize, Part), String> {
     if let Some(index) = vehicle.parts.iter().position(|p| p.id == id) {
         let part = vehicle.parts.remove(index);
         return Ok((None, index, part));
@@ -675,7 +876,8 @@ fn patch_kind(kind: &mut PartKind, param: &str, value: Value) -> Result<Value, S
         .cloned()
         .ok_or_else(|| format!("part has no parameter '{param}'"))?;
     map.insert(param.to_string(), value);
-    *kind = serde_json::from_value(json).map_err(|e| format!("invalid value for '{param}': {e}"))?;
+    *kind =
+        serde_json::from_value(json).map_err(|e| format!("invalid value for '{param}': {e}"))?;
     Ok(old)
 }
 
@@ -694,12 +896,21 @@ fn patch_design(design: &mut Design, param: &str, value: Value) -> Result<Value,
     if key == "motor_designation" {
         return Err("use select_motor to change the motor".into());
     }
-    let old = map
-        .get(&key)
-        .cloned()
-        .ok_or_else(|| format!("design has no parameter '{param}'"))?;
+    // Optional chute fields (dual-deploy) are skipped from the serialized
+    // form when absent, so a missing key here is "currently unset", not a
+    // typo — its prior value is null, and null clears it back to None.
+    const OPTIONAL_CHUTE_FIELDS: [&str; 3] =
+        ["main_deploy_altitude_m", "drogue_diameter_cm", "drogue_cd"];
+    let old = match map.get(&key).cloned() {
+        Some(old) => old,
+        None if param.starts_with("chute.") && OPTIONAL_CHUTE_FIELDS.contains(&key.as_str()) => {
+            Value::Null
+        }
+        None => return Err(format!("design has no parameter '{param}'")),
+    };
     map.insert(key, value);
-    *design = serde_json::from_value(json).map_err(|e| format!("invalid value for '{param}': {e}"))?;
+    *design =
+        serde_json::from_value(json).map_err(|e| format!("invalid value for '{param}': {e}"))?;
     Ok(old)
 }
 
@@ -712,6 +923,12 @@ mod tests {
 
     fn every_variant() -> Vec<Command> {
         vec![
+            Command::Batch {
+                commands: vec![Command::SetSimParam {
+                    param: "cd".into(),
+                    value: json!(0.61),
+                }],
+            },
             Command::AddPart {
                 parent: Some(PartId(2)),
                 kind: PartKind::FinSet {
@@ -748,6 +965,7 @@ mod tests {
                 index: 1,
                 part: Part {
                     id: PartId(7),
+                    as_built_mass_g: None,
                     kind: PartKind::MassComponent {
                         name: "payload".into(),
                         position_m: 0.1,
@@ -808,6 +1026,31 @@ mod tests {
                     data: json!({ "n": 1 }),
                 }),
             },
+            Command::SetAtmosphere { profile: None },
+            Command::SetAtmosphere {
+                profile: Some(AtmosphereProfile {
+                    name: "koun-12z".into(),
+                    layers: vec![
+                        ascent_sim::ProfileLayer {
+                            altitude_m: 0.0,
+                            wind_speed_ms: 3.0,
+                            wind_direction_deg: 0.0,
+                            density_kg_m3: Some(1.225),
+                        },
+                        ascent_sim::ProfileLayer {
+                            altitude_m: 1000.0,
+                            wind_speed_ms: 5.5,
+                            wind_direction_deg: 15.0,
+                            density_kg_m3: Some(1.112),
+                        },
+                    ],
+                }),
+            },
+            Command::SetTelemetry { bundles: vec![] },
+            Command::SetAlignment { alignment: None },
+            Command::SetReconciliation {
+                reconciliation: None,
+            },
         ]
     }
 
@@ -827,12 +1070,17 @@ mod tests {
 
         let expected = BTreeSet::from([
             "add-part",
+            "batch",
             "create-study",
             "delete-study",
             "remove-part",
             "restore-part",
             "restore-study",
             "select-motor",
+            "set-atmosphere",
+            "set-alignment",
+            "set-reconciliation",
+            "set-telemetry",
             "set-design",
             "set-part-param",
             "set-sim-param",
@@ -842,7 +1090,11 @@ mod tests {
         let entries = command_grammar();
         let actual: BTreeSet<_> = entries.iter().map(|entry| entry.verb).collect();
 
-        assert_eq!(entries.len(), expected.len(), "catalogue contains duplicate verbs");
+        assert_eq!(
+            entries.len(),
+            expected.len(),
+            "catalogue contains duplicate verbs"
+        );
         assert_eq!(actual, expected);
         for entry in entries {
             let example = every_variant()
@@ -867,10 +1119,16 @@ mod tests {
             "set-part-param 3 root_chord_m 0.05"
         );
         assert_eq!(
-            Command::SelectMotor { designation: "C6".into() }.to_text(),
+            Command::SelectMotor {
+                designation: "C6".into()
+            }
+            .to_text(),
             "select-motor C6"
         );
-        assert_eq!(Command::RemovePart { id: PartId(4) }.to_text(), "remove-part 4");
+        assert_eq!(
+            Command::RemovePart { id: PartId(4) }.to_text(),
+            "remove-part 4"
+        );
     }
 
     #[test]
@@ -883,10 +1141,16 @@ mod tests {
             ("set-part-param 3 root_chord_m not-json", "bad value"),
             ("add-part 2", "part kind"),
             ("select-motor", "motor designation"),
-            ("create-study \"a\" native notanumber {\"kind\":\"single_flight\"}", "seed"),
+            (
+                "create-study \"a\" native notanumber {\"kind\":\"single_flight\"}",
+                "seed",
+            ),
         ] {
             let err = Command::parse_text(line).unwrap_err();
-            assert!(err.contains(needle), "'{line}' → '{err}' (wanted '{needle}')");
+            assert!(
+                err.contains(needle),
+                "'{line}' → '{err}' (wanted '{needle}')"
+            );
         }
     }
 
@@ -902,13 +1166,20 @@ mod tests {
             "set-study-param 1 seed 9",
         ];
         for line in script {
-            via_text.dispatch(Command::parse_text(line).unwrap()).unwrap();
+            via_text
+                .dispatch(Command::parse_text(line).unwrap())
+                .unwrap();
         }
         via_enum
-            .dispatch(Command::SetSimParam { param: "cd".into(), value: json!(0.7) })
+            .dispatch(Command::SetSimParam {
+                param: "cd".into(),
+                value: json!(0.7),
+            })
             .unwrap();
         via_enum
-            .dispatch(Command::SelectMotor { designation: "B6".into() })
+            .dispatch(Command::SelectMotor {
+                designation: "B6".into(),
+            })
             .unwrap();
         via_enum
             .dispatch(Command::CreateStudy {
