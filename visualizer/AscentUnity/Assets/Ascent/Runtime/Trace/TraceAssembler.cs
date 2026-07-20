@@ -26,7 +26,7 @@ namespace Ascent.Runtime.Trace
         };
 
         private TraceManifestPayload _manifest;
-        private readonly Dictionary<string, List<double>> _channels = new Dictionary<string, List<double>>();
+        private readonly Dictionary<string, List<long>> _channels = new Dictionary<string, List<long>>();
         private readonly Dictionary<string, uint> _nextSeq = new Dictionary<string, uint>();
         private List<TraceEvent> _events;
 
@@ -39,12 +39,12 @@ namespace Ascent.Runtime.Trace
         {
             if (_manifest == null)
                 throw new TraceRejected("chunk before manifest");
-            if (chunk.Samples.Length > Protocol.MaxChunkSamples)
+            if (chunk.SampleBits.Length > Protocol.MaxChunkSamples)
                 throw new TraceRejected($"chunk for {chunk.Channel} exceeds {Protocol.MaxChunkSamples} samples");
 
             if (!_channels.TryGetValue(chunk.Channel, out var list))
             {
-                list = new List<double>();
+                list = new List<long>();
                 _channels[chunk.Channel] = list;
                 _nextSeq[chunk.Channel] = 0;
             }
@@ -52,7 +52,7 @@ namespace Ascent.Runtime.Trace
                 throw new TraceRejected(
                     $"chunk for {chunk.Channel} out of order: got {chunk.Sequence}, expected {_nextSeq[chunk.Channel]}");
             _nextSeq[chunk.Channel] = chunk.Sequence + 1;
-            list.AddRange(chunk.Samples);
+            list.AddRange(chunk.SampleBits);
         }
 
         public void AcceptEvents(TraceEventsPayload events)
@@ -86,21 +86,29 @@ namespace Ascent.Runtime.Trace
             // Recompute the canonical hash in manifest channel order.
             var hashChannels = new List<TraceHash.Channel>();
             foreach (var spec in _manifest.Channels)
-                hashChannels.Add(new TraceHash.Channel { Name = spec.Name, Samples = _channels[spec.Name].ToArray() });
+                hashChannels.Add(new TraceHash.Channel { Name = spec.Name, SampleBits = _channels[spec.Name].ToArray() });
             var computed = TraceHash.Compute(hashChannels, _events);
             if (!string.Equals(computed, _manifest.TraceHash, StringComparison.Ordinal))
                 throw new TraceRejected($"trace hash mismatch: {computed} != {_manifest.TraceHash}");
 
             return new FlightTrace(
-                _channels["time_s"].ToArray(),
-                _channels["position_x_m"].ToArray(),
-                _channels["position_y_m"].ToArray(),
-                _channels["position_z_m"].ToArray(),
-                _channels["velocity_x_ms"].ToArray(),
-                _channels["velocity_y_ms"].ToArray(),
-                _channels["velocity_z_ms"].ToArray(),
+                ToDoubles(_channels["time_s"]),
+                ToDoubles(_channels["position_x_m"]),
+                ToDoubles(_channels["position_y_m"]),
+                ToDoubles(_channels["position_z_m"]),
+                ToDoubles(_channels["velocity_x_ms"]),
+                ToDoubles(_channels["velocity_y_ms"]),
+                ToDoubles(_channels["velocity_z_ms"]),
                 _events,
                 _manifest.TraceHash);
+        }
+
+        private static double[] ToDoubles(List<long> bits)
+        {
+            var values = new double[bits.Count];
+            for (var i = 0; i < bits.Count; i++)
+                values[i] = BitConverter.Int64BitsToDouble(bits[i]);
+            return values;
         }
     }
 }

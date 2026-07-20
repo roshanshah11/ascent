@@ -148,7 +148,7 @@ fn bridge_streams_deterministic_trace_and_supports_cancel_and_shutdown() {
                 if !channel_order.contains(&channel) {
                     channel_order.push(channel);
                 }
-                entry.extend_from_slice(&samples);
+                entry.extend(samples.into_iter().map(|bits| f64::from_bits(bits as u64)));
             }
             ServerMessage::TraceEvents { events: e, .. } => events = e,
             ServerMessage::RunCompleted { trace_hash, .. } => completed_hash = Some(trace_hash),

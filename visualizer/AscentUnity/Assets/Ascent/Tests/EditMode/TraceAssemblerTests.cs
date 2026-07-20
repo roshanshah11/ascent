@@ -8,11 +8,13 @@ namespace Ascent.Tests.EditMode
 {
     public class TraceAssemblerTests
     {
+        private static long[] Bits(params double[] values) => values.Select(System.BitConverter.DoubleToInt64Bits).ToArray();
+
         // The exact channel/event values baked into the Rust-generated fixtures.
         private static List<TraceHash.Channel> FixtureChannels() => new List<TraceHash.Channel>
         {
-            new TraceHash.Channel { Name = "time_s", Samples = new[] { 0.0, 0.02, 0.04 } },
-            new TraceHash.Channel { Name = "position_z_m", Samples = new[] { 0.0, 1.5, 6.0 } },
+            new TraceHash.Channel { Name = "time_s", SampleBits = Bits(0.0, 0.02, 0.04) },
+            new TraceHash.Channel { Name = "position_z_m", SampleBits = Bits(0.0, 1.5, 6.0) },
         };
 
         private static List<TraceEvent> FixtureEvents() => new List<TraceEvent>
@@ -67,7 +69,7 @@ namespace Ascent.Tests.EditMode
 
         private static TraceManifestPayload SyntheticManifest(Dictionary<string, double[]> data, List<TraceEvent> events, string hashOverride = null)
         {
-            var hashChannels = AllChannels.Select(n => new TraceHash.Channel { Name = n, Samples = data[n] }).ToList();
+            var hashChannels = AllChannels.Select(n => new TraceHash.Channel { Name = n, SampleBits = Bits(data[n]) }).ToList();
             return new TraceManifestPayload
             {
                 RunId = "run-1",
@@ -81,7 +83,7 @@ namespace Ascent.Tests.EditMode
         private static void FeedChunks(TraceAssembler asm, Dictionary<string, double[]> data)
         {
             foreach (var name in AllChannels)
-                asm.AcceptChunk(new TraceChannelChunkPayload { RunId = "run-1", Channel = name, Sequence = 0, Samples = data[name] });
+                asm.AcceptChunk(new TraceChannelChunkPayload { RunId = "run-1", Channel = name, Sequence = 0, SampleBits = Bits(data[name]) });
         }
 
         [Test]
@@ -109,7 +111,7 @@ namespace Ascent.Tests.EditMode
             var asm = new TraceAssembler();
             asm.AcceptManifest(SyntheticManifest(SyntheticData(), FixtureEvents()));
             Assert.Throws<TraceRejected>(() =>
-                asm.AcceptChunk(new TraceChannelChunkPayload { RunId = "run-1", Channel = "time_s", Sequence = 1, Samples = new[] { 0.0 } }));
+                asm.AcceptChunk(new TraceChannelChunkPayload { RunId = "run-1", Channel = "time_s", Sequence = 1, SampleBits = Bits(0.0) }));
         }
 
         [Test]
@@ -120,7 +122,7 @@ namespace Ascent.Tests.EditMode
             asm.AcceptManifest(SyntheticManifest(data, FixtureEvents()));
             // Feed all but the last required channel.
             foreach (var name in AllChannels.Take(AllChannels.Length - 1))
-                asm.AcceptChunk(new TraceChannelChunkPayload { RunId = "run-1", Channel = name, Sequence = 0, Samples = data[name] });
+                asm.AcceptChunk(new TraceChannelChunkPayload { RunId = "run-1", Channel = name, Sequence = 0, SampleBits = Bits(data[name]) });
             asm.AcceptEvents(new TraceEventsPayload { RunId = "run-1", Events = FixtureEvents() });
             Assert.Throws<TraceRejected>(() => asm.Build());
         }

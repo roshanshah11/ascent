@@ -457,7 +457,7 @@ fn stream_run(run_id: String, request_id: Option<String>, cancel: Arc<AtomicBool
                 run_id: run_id.clone(),
                 channel: channel.name.clone(),
                 sequence: sequence as u32,
-                samples: chunk.to_vec(),
+                samples: chunk.iter().map(|sample| sample.to_bits() as i64).collect(),
             });
         }
     }

@@ -6,7 +6,7 @@
   "payload": {
     "kind": "trace_manifest",
     "run_id": "run-1",
-    "trace_hash": "aba354029a95b985660a6b77b361d5a3e98eefe670f89a248239f7e7e58b648c",
+    "trace_hash": "36ab74cbc864b44f0cea106645e0ee52de262c243b3b879583b088cf72b78f97",
     "sample_count": 3,
     "event_count": 2,
     "channels": [

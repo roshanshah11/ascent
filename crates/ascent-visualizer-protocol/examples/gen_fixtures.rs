@@ -171,7 +171,11 @@ fn main() {
             run_id: "run-1".into(),
             channel: "time_s".into(),
             sequence: 0,
-            samples: vec![0.0, 0.02, 0.04],
+            samples: vec![
+                0.0_f64.to_bits() as i64,
+                0.02_f64.to_bits() as i64,
+                0.04_f64.to_bits() as i64,
+            ],
         },
     );
     write_server(

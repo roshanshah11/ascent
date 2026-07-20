@@ -96,7 +96,9 @@ namespace Ascent.Runtime.Bridge
         [JsonProperty("run_id")] public string RunId { get; set; }
         [JsonProperty("channel")] public string Channel { get; set; }
         [JsonProperty("sequence")] public uint Sequence { get; set; }
-        [JsonProperty("samples")] public double[] Samples { get; set; }
+        // Raw IEEE-754 f64 bit patterns from Rust. JSON decimal parsing would
+        // otherwise make the cross-language canonical trace hash ambiguous.
+        [JsonProperty("samples")] public long[] SampleBits { get; set; }
     }
 
     public sealed class TraceEventsPayload

@@ -106,7 +106,11 @@ pub enum ServerMessage {
         run_id: String,
         channel: String,
         sequence: u32,
-        samples: Vec<f64>,
+        /// IEEE-754 f64 samples as little-endian bit patterns (reinterpreted as
+        /// i64). Transmitting bits — not decimal text — keeps the reconstructed
+        /// trace hash exact across languages, independent of each side's float
+        /// parser. Decode with `f64::from_bits(bits as u64)`.
+        samples: Vec<i64>,
     },
     TraceEvents {
         run_id: String,
