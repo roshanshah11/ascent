@@ -3,3 +3,21 @@ app/node_modules/
 app/dist/
 .worktrees/
 .superpowers/
+
+# Unity (visualizer/AscentUnity) — generated, machine-local, or large
+visualizer/AscentUnity/[Ll]ibrary/
+visualizer/AscentUnity/[Tt]emp/
+visualizer/AscentUnity/[Oo]bj/
+visualizer/AscentUnity/[Bb]uild/
+visualizer/AscentUnity/[Bb]uilds/
+visualizer/AscentUnity/[Ll]ogs/
+visualizer/AscentUnity/[Uu]ser[Ss]ettings/
+visualizer/AscentUnity/[Mm]emoryCaptures/
+visualizer/AscentUnity/TestResults/
+visualizer/AscentUnity/[Ee]xports/
+*.csproj
+*.sln
+*.pidb
+*.booproj
+*.unityproj
+.DS_Store
