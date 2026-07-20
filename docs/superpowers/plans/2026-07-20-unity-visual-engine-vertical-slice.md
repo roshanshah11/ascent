@@ -1,6 +1,6 @@
 # Unity Visual Engineering Vertical Slice Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Execution mode:** Work inline, one major step at a time. Implement first, then add and run the focused verification listed for that step. Do not use test-first cycles, subagent chains, or worktrees. Verification snippets may appear before implementation text for reference, but execute them only afterward.
 
 **Goal:** Build one narrow but convincing Ascent experience: an evidence-graded NASA Black Brant IX mission simulated by Rust and reviewed launch-to-landing in a realistic, interactive, cinematic Unity client.
 
@@ -102,7 +102,7 @@ Every manifest item uses this exact field set. The implementation obtains the di
 
 The digest shown above is the known SHA-256 of an empty file and demonstrates the serialized format only; validation also rejects an empty source artifact, so it cannot pass as source evidence.
 
-- [ ] **Step 1.2: Write failing evidence and vehicle tests**
+- [ ] **Step 1.2: Add focused evidence and vehicle verification after implementation**
 
 ```rust
 #[test]
@@ -127,13 +127,13 @@ Run:
 rtk cargo test -p ascent-domain --test black_brant_ix
 ```
 
-Expected: FAIL because the reference module and fixtures do not exist.
+Verification target after implementation: PASS.
 
 - [ ] **Step 1.3: Implement the typed reference loader**
 
 Add `pub mod reference;` to `crates/ascent-domain/src/lib.rs`. Parse checked-in JSON with `serde_json`, reject a field without exactly one evidence binding, reject non-finite or non-positive engineering dimensions, and reject a source digest that is not 64 lowercase hexadecimal characters. Derived entries must contain a formula and named input field paths. Approximate entries must contain an impact statement.
 
-- [ ] **Step 1.4: Write the failing deterministic mission regression**
+- [ ] **Step 1.4: Add the deterministic mission regression after implementation**
 
 ```rust
 #[test]
@@ -158,7 +158,7 @@ Run:
 rtk cargo test -p ascent-sim --test black_brant_ix_trace
 ```
 
-Expected: FAIL until the reference inputs are wired through the existing staged 6-DOF path.
+Verification target after implementation: PASS.
 
 - [ ] **Step 1.5: Implement and verify the reference mission**
 
@@ -209,7 +209,7 @@ rtk git commit -m "feat: add evidence-graded Black Brant IX reference"
 - Frame: four-byte little-endian length plus UTF-8 JSON, maximum 16 MiB.
 - Chunk: one channel, at most 1,024 samples, contiguous `sequence` beginning at zero.
 
-- [ ] **Step 2.1: Add failing codec tests**
+- [ ] **Step 2.1: Add focused codec verification after implementation**
 
 ```rust
 #[test]
@@ -233,7 +233,7 @@ Run:
 rtk cargo test -p ascent-visualizer-protocol
 ```
 
-Expected: FAIL because the protocol crate does not exist.
+Verification target after implementation: PASS.
 
 - [ ] **Step 2.2: Define the exact v1 envelope and message kinds**
 
@@ -266,7 +266,7 @@ rtk cargo test -p ascent-visualizer-protocol
 
 Expected: PASS.
 
-- [ ] **Step 2.4: Write the failing subprocess contract test**
+- [ ] **Step 2.4: Add the subprocess contract verification after implementation**
 
 The test spawns `ascent-visualizer-bridge --stdio`, completes `hello`, confirms the single mission id, starts a run, reconstructs all channel chunks and events, validates the trace hash, starts and cancels a second run, starts a third run, and shuts down cleanly. It asserts stdout contains only frames and stderr never contains protocol bytes.
 
@@ -276,7 +276,7 @@ Run:
 rtk cargo test -p ascent-visualizer-bridge --test subprocess
 ```
 
-Expected: FAIL because the bridge runtime does not exist.
+Verification target after implementation: PASS.
 
 - [ ] **Step 2.5: Implement the bridge state machine**
 
@@ -352,7 +352,7 @@ fi
 exec "$editor" -projectPath "$project_root/visualizer/AscentUnity" "$@"
 ```
 
-- [ ] **Step 3.2: Write failing fixture and frame-decoder EditMode tests**
+- [ ] **Step 3.2: Add focused fixture and frame-decoder verification after implementation**
 
 Use Rust fixture bytes unchanged. Test one-byte reads, split length prefix, split payload, multiple frames, zero length, oversize, malformed UTF-8, malformed JSON, duplicate `message_id`, and unknown protocol version.
 
@@ -374,7 +374,7 @@ Run:
 rtk proxy scripts/unity.sh -batchmode -nographics -runTests -testPlatform EditMode -testResults visualizer/AscentUnity/TestResults/editmode.xml -quit
 ```
 
-Expected: FAIL because the C# codec does not exist.
+Verification target after implementation: PASS.
 
 - [ ] **Step 3.3: Implement process supervision and binary framed I/O**
 
@@ -382,7 +382,7 @@ Launch with `System.Diagnostics.Process`, `UseShellExecute = false`, and all thr
 
 Handshake expires after five seconds. Shutdown waits two seconds before killing and reaping the child. One unexpected exit triggers one restart with a new process generation. Messages tagged to an earlier generation are discarded. Application quit always invokes shutdown and reap.
 
-- [ ] **Step 3.4: Write failing trace assembly and coordinate tests**
+- [ ] **Step 3.4: Add focused trace assembly and coordinate verification after implementation**
 
 Cover missing, duplicate, and out-of-order chunks; manifest count mismatch; invalid hash; identity attitude; East, North, and Up axes; compound rotation; shortest-path slerp; invalid-sample gaps; and exact event seeking.
 
@@ -453,7 +453,7 @@ rtk git commit -m "feat: add supervised Unity visualizer runtime"
 - Camera ids are `pad`, `chase`, `onboard`, `ground_tracking`, and `inspection`.
 - Layer ids are `trajectory`, `velocity`, `body_axes`, `attitude`, `stage_state`, `events`, and `uncertainty` when present.
 
-- [ ] **Step 4.1: Write failing layer-binding and clean-view tests**
+- [ ] **Step 4.1: Add focused layer-binding and clean-view verification after implementation**
 
 ```csharp
 [Test]
@@ -478,7 +478,7 @@ public IEnumerator CleanViewHidesLayersWithoutChangingReviewState()
 }
 ```
 
-Run EditMode and PlayMode tests. Expected: FAIL because the catalog and shell do not exist.
+Run these EditMode and PlayMode checks only after the catalog and shell are implemented. Expected: PASS.
 
 - [ ] **Step 4.2: Build the evidence-backed vehicle and bounded range**
 
@@ -548,7 +548,7 @@ rtk git commit -m "feat: build Unity aerospace review vertical slice"
 
 - Produces: `rtk cargo xtask visualizer-test`, a repeatable acceptance record, and an evidence-backed `expand` or `contain` platform decision.
 
-- [ ] **Step 5.1: Write the failing xtask command test**
+- [ ] **Step 5.1: Add the focused xtask command verification after implementation**
 
 Add a command-parsing test proving `visualizer-test` is recognized and reports each gate distinctly: Rust protocol, bridge subprocess, Unity EditMode, Unity PlayMode, packaged smoke, performance record, and export manifest. If the pinned Unity editor is absent, return a prerequisite error naming the required editor version; never silently skip.
 
@@ -558,7 +558,7 @@ Run:
 rtk cargo test -p xtask
 ```
 
-Expected: FAIL because `visualizer-test` is not registered.
+Verification target after implementation: PASS.
 
 - [ ] **Step 5.2: Implement the opt-in visualizer gate**
 
@@ -609,7 +609,7 @@ rtk git commit -m "docs: record Unity visual engine decision"
 - [ ] Rust and C# use identical protocol fields, message kinds, limits, timeouts, mission id, and coordinate basis.
 - [ ] No task introduces a second physics, evidence, event, clock, or mutation authority.
 - [ ] All displayed values and external assets have resolvable provenance.
-- [ ] Every test is written to fail before its implementation step.
+- [ ] Focused verification is added and run after implementation; no test-first cycle or redundant broad test pass is required.
 - [ ] Each step ends in a focused commit and independently reviewable deliverable.
 - [ ] The interactive and cinematic quality tiers remain separate.
 - [ ] Tauri, React, and `ascent-mcp` remain intact regardless of the Unity gate.
