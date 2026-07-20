@@ -1,0 +1,10 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-cancelled",
+  "request_id": "req-1",
+  "kind": "run_cancelled",
+  "payload": {
+    "kind": "run_cancelled",
+    "run_id": "run-2"
+  }
+}

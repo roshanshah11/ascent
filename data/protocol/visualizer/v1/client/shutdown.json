@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "message_id": "c-shutdown",
+  "kind": "shutdown",
+  "payload": {
+    "kind": "shutdown"
+  }
+}

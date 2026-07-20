@@ -1,0 +1,10 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-started",
+  "request_id": "req-1",
+  "kind": "run_started",
+  "payload": {
+    "kind": "run_started",
+    "run_id": "run-1"
+  }
+}

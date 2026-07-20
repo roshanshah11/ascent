@@ -1,0 +1,16 @@
+[package]
+name = "ascent-visualizer-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "ascent-visualizer-bridge"
+path = "src/main.rs"
+
+[dependencies]
+ascent-visualizer-protocol = { path = "../ascent-visualizer-protocol" }
+ascent-domain = { path = "../ascent-domain" }
+ascent-sim = { path = "../ascent-sim" }
+serde_json = { workspace = true }

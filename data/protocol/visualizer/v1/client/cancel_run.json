@@ -1,0 +1,9 @@
+{
+  "protocol_version": 1,
+  "message_id": "c-cancel",
+  "kind": "cancel_run",
+  "payload": {
+    "kind": "cancel_run",
+    "run_id": "run-1"
+  }
+}

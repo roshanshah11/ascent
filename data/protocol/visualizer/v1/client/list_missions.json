@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "message_id": "c-list",
+  "kind": "list_missions",
+  "payload": {
+    "kind": "list_missions"
+  }
+}

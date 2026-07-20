@@ -1,0 +1,9 @@
+{
+  "protocol_version": 1,
+  "message_id": "c-run",
+  "kind": "run_mission",
+  "payload": {
+    "kind": "run_mission",
+    "mission_id": "nasa.black-brant-ix.reference"
+  }
+}

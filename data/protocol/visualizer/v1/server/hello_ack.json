@@ -1,0 +1,11 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-hello",
+  "request_id": "req-1",
+  "kind": "hello_ack",
+  "payload": {
+    "kind": "hello_ack",
+    "server": "ascent-visualizer-bridge",
+    "protocol_version": 1
+  }
+}

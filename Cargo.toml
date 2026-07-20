@@ -7,6 +7,8 @@ members = [
     "crates/ascent-app",
     "crates/ascent-review",
     "crates/ascent-mcp",
+    "crates/ascent-visualizer-protocol",
+    "crates/ascent-visualizer-bridge",
     "xtask",
 ]
 

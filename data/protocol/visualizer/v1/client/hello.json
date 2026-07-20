@@ -1,0 +1,10 @@
+{
+  "protocol_version": 1,
+  "message_id": "c-hello",
+  "kind": "hello",
+  "payload": {
+    "kind": "hello",
+    "client": "unity",
+    "protocol_version": 1
+  }
+}

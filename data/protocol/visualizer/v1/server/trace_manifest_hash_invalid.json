@@ -1,0 +1,23 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-manifest-bad",
+  "request_id": "req-1",
+  "kind": "trace_manifest",
+  "payload": {
+    "kind": "trace_manifest",
+    "run_id": "run-1",
+    "trace_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "sample_count": 3,
+    "event_count": 2,
+    "channels": [
+      {
+        "name": "time_s",
+        "sample_count": 3
+      },
+      {
+        "name": "position_z_m",
+        "sample_count": 3
+      }
+    ]
+  }
+}

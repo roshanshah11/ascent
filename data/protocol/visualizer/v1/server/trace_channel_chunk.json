@@ -1,0 +1,17 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-chunk",
+  "request_id": "req-1",
+  "kind": "trace_channel_chunk",
+  "payload": {
+    "kind": "trace_channel_chunk",
+    "run_id": "run-1",
+    "channel": "time_s",
+    "sequence": 0,
+    "samples": [
+      0.0,
+      0.02,
+      0.04
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-progress",
+  "request_id": "req-1",
+  "kind": "run_progress",
+  "payload": {
+    "kind": "run_progress",
+    "run_id": "run-1",
+    "fraction": 0.5
+  }
+}

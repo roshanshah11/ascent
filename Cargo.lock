@@ -134,6 +134,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "ascent-visualizer-bridge"
+version = "0.6.0"
+dependencies = [
+ "ascent-domain",
+ "ascent-sim",
+ "ascent-visualizer-protocol",
+ "serde_json",
+]
+
+[[package]]
+name = "ascent-visualizer-protocol"
+version = "0.6.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.91"
 source = "registry+https://github.com/rust-lang/crates.io-index"

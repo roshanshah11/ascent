@@ -1,0 +1,15 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-catalog",
+  "request_id": "req-1",
+  "kind": "mission_catalog",
+  "payload": {
+    "kind": "mission_catalog",
+    "missions": [
+      {
+        "mission_id": "nasa.black-brant-ix.reference",
+        "title": "NASA Black Brant IX (reference)"
+      }
+    ]
+  }
+}

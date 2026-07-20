@@ -1,0 +1,11 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-completed",
+  "request_id": "req-1",
+  "kind": "run_completed",
+  "payload": {
+    "kind": "run_completed",
+    "run_id": "run-1",
+    "trace_hash": "aba354029a95b985660a6b77b361d5a3e98eefe670f89a248239f7e7e58b648c"
+  }
+}

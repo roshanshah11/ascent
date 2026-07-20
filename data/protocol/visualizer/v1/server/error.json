@@ -1,0 +1,11 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-error",
+  "request_id": "req-1",
+  "kind": "error",
+  "payload": {
+    "kind": "error",
+    "code": "mission_not_found",
+    "message": "unknown mission id"
+  }
+}
