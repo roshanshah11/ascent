@@ -548,7 +548,7 @@ rtk git commit -m "feat: build Unity aerospace review vertical slice"
 
 - Produces: `rtk cargo xtask visualizer-test`, a repeatable acceptance record, and an evidence-backed `expand` or `contain` platform decision.
 
-- [ ] **Step 5.1: Add the focused xtask command verification after implementation**
+- [x] **Step 5.1: Add the focused xtask command verification after implementation**
 
 Add a command-parsing test proving `visualizer-test` is recognized and reports each gate distinctly: Rust protocol, bridge subprocess, Unity EditMode, Unity PlayMode, packaged smoke, performance record, and export manifest. If the pinned Unity editor is absent, return a prerequisite error naming the required editor version; never silently skip.
 
@@ -560,7 +560,7 @@ rtk cargo test -p xtask
 
 Verification target after implementation: PASS.
 
-- [ ] **Step 5.2: Implement the opt-in visualizer gate**
+- [x] **Step 5.2: Implement the opt-in visualizer gate**
 
 The gate builds the bridge, runs protocol and subprocess tests, invokes `scripts/unity.sh` for both Unity test platforms, launches a packaged development build with the reference scenario, validates process cleanup, and parses the export manifest. Keep the existing `cargo xtask test` behavior unchanged so machines without Unity retain the current workspace gate.
 
