@@ -143,7 +143,10 @@ async fn sdk_task_call_has_a_real_working_to_completed_lifecycle() {
     };
     assert_eq!(created.task.status, TaskStatus::Working);
 
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+    // Guard against a hung task, not a perf bound: matches the 30s job-wait
+    // convention in jobs.rs so a real study running under saturated parallel
+    // test load cannot trip a too-tight deadline.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
         let response = client
             .send_request(ClientRequest::GetTaskRequest(Request::new(
