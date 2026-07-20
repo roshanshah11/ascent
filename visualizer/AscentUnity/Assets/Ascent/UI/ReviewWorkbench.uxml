@@ -1,0 +1,44 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <!--
+      Review workbench layout: a compact top mission/status bar, a left layer
+      rail, a right state/evidence inspector, and a bottom semantic timeline.
+      Selecting a timeline marker seeks the exact Rust event time; every readout
+      carries units, validity, and evidence status. Wiring lives in the runtime
+      ReviewWorkbench controller.
+    -->
+    <ui:VisualElement name="root" class="ascent-root">
+        <ui:VisualElement name="top-bar" class="top-bar">
+            <ui:Label name="mission-name" text="NASA Black Brant IX (reference)" class="mission-name" />
+            <ui:Label name="status" text="Idle" class="status" />
+            <ui:Label name="trace-hash" text="trace —" class="trace-hash" />
+        </ui:VisualElement>
+
+        <ui:VisualElement name="body" class="body">
+            <ui:VisualElement name="layer-rail" class="layer-rail">
+                <ui:Label text="Engineering layers" class="rail-title" />
+                <ui:VisualElement name="layer-list" class="layer-list" />
+                <ui:Toggle name="clean-view" label="Clean view (C)" class="clean-view" />
+            </ui:VisualElement>
+
+            <ui:VisualElement name="viewport" class="viewport" />
+
+            <ui:VisualElement name="inspector" class="inspector">
+                <ui:Label text="State" class="inspector-title" />
+                <ui:VisualElement name="state-readouts" class="state-readouts" />
+                <ui:Label text="Evidence" class="inspector-title" />
+                <ui:VisualElement name="evidence-drawer" class="evidence-drawer" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="timeline" class="timeline">
+            <ui:VisualElement name="transport" class="transport">
+                <ui:Button name="play-pause" text="Play/Pause (Space)" class="transport-button" />
+                <ui:Label name="clock" text="t = 0.000 s" class="clock" />
+                <ui:Label name="rate" text="1x" class="rate" />
+            </ui:VisualElement>
+            <ui:VisualElement name="event-track" class="event-track" />
+        </ui:VisualElement>
+
+        <ui:VisualElement name="notice" class="notice" />
+    </ui:VisualElement>
+</ui:UXML>

@@ -1,0 +1,85 @@
+/* Review workbench styling — a restrained engineering shell, not a game HUD.
+   Neutral dark surfaces, clear hierarchy, legible at 1920x1080. */
+
+.ascent-root {
+    flex-grow: 1;
+    flex-direction: column;
+    background-color: rgb(18, 20, 24);
+    color: rgb(226, 230, 236);
+    font-size: 13px;
+}
+
+.top-bar {
+    flex-direction: row;
+    align-items: center;
+    height: 34px;
+    padding-left: 12px;
+    padding-right: 12px;
+    background-color: rgb(26, 29, 35);
+    border-bottom-width: 1px;
+    border-bottom-color: rgb(44, 48, 56);
+}
+
+.mission-name { -unity-font-style: bold; flex-grow: 1; }
+.status { color: rgb(150, 200, 255); margin-right: 16px; }
+.trace-hash { color: rgb(140, 146, 156); -unity-font-style: italic; }
+
+.body { flex-direction: row; flex-grow: 1; }
+
+.layer-rail {
+    width: 240px;
+    padding: 10px;
+    background-color: rgb(22, 25, 30);
+    border-right-width: 1px;
+    border-right-color: rgb(44, 48, 56);
+}
+
+.rail-title, .inspector-title {
+    -unity-font-style: bold;
+    color: rgb(180, 186, 196);
+    margin-bottom: 6px;
+    margin-top: 6px;
+}
+
+.layer-list { flex-grow: 1; }
+.clean-view { margin-top: 8px; }
+
+.viewport { flex-grow: 1; background-color: rgb(10, 11, 14); }
+
+.inspector {
+    width: 300px;
+    padding: 10px;
+    background-color: rgb(22, 25, 30);
+    border-left-width: 1px;
+    border-left-color: rgb(44, 48, 56);
+}
+
+.state-readouts, .evidence-drawer { margin-bottom: 10px; }
+
+.timeline {
+    height: 96px;
+    background-color: rgb(26, 29, 35);
+    border-top-width: 1px;
+    border-top-color: rgb(44, 48, 56);
+    padding: 8px 12px;
+}
+
+.transport { flex-direction: row; align-items: center; margin-bottom: 6px; }
+.transport-button { height: 24px; }
+.clock { margin-left: 16px; -unity-font-style: bold; }
+.rate { margin-left: 12px; color: rgb(150, 200, 255); }
+
+.event-track {
+    flex-grow: 1;
+    flex-direction: row;
+    align-items: center;
+    background-color: rgb(16, 18, 22);
+    border-radius: 3px;
+}
+
+.notice {
+    min-height: 0;
+    padding-left: 12px;
+    padding-right: 12px;
+    color: rgb(255, 210, 140);
+}
