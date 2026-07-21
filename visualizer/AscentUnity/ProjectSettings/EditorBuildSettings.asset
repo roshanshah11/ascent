@@ -4,6 +4,9 @@
 EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
-  m_Scenes: []
+  m_Scenes:
+  - enabled: 1
+    path: Assets/Ascent/Scenes/BlackBrantIX.unity
+    guid: bc49ff509adc94a12889abf2c12d7241
   m_configObjects: {}
   m_UseUCBPForAssetBundles: 0

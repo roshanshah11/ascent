@@ -51,6 +51,7 @@ namespace Ascent.Editor
                     return;
                 }
                 AssetDatabase.SaveAssets();
+                RegisterInBuildSettings(ScenePath);
                 Debug.Log($"BlackBrantSceneBuilder: wrote {ScenePath}");
                 EditorApplication.Exit(0);
             }
@@ -150,6 +151,24 @@ namespace Ascent.Editor
             anchors.reviewShell = workbenchGo.transform;
 
             return scene;
+        }
+
+        /// <summary>
+        /// Ensures the review scene is registered (and enabled) in the editor build
+        /// settings so a runtime <c>SceneManager.LoadScene</c> can find it by name —
+        /// needed by the PlayMode performance gate and any packaged build.
+        /// </summary>
+        private static void RegisterInBuildSettings(string path)
+        {
+            foreach (var s in EditorBuildSettings.scenes)
+                if (s.path == path)
+                    return;
+            var list = new List<EditorBuildSettingsScene>(EditorBuildSettings.scenes)
+            {
+                new EditorBuildSettingsScene(path, true),
+            };
+            EditorBuildSettings.scenes = list.ToArray();
+            Debug.Log($"BlackBrantSceneBuilder: registered {path} in build settings");
         }
 
         private static Transform MakeStage(string name, Transform parent, float yOffset, float height, float radius)
