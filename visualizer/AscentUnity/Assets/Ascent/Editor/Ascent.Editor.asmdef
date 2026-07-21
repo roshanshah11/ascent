@@ -2,7 +2,9 @@
     "name": "Ascent.Editor",
     "rootNamespace": "Ascent.Editor",
     "references": [
-        "Ascent.Runtime"
+        "Ascent.Runtime",
+        "Unity.RenderPipelines.Core.Runtime",
+        "Unity.RenderPipelines.HighDefinition.Runtime"
     ],
     "includePlatforms": [
         "Editor"

@@ -3,6 +3,7 @@ using Ascent.Runtime.Presentation;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
 namespace Ascent.Editor
@@ -98,16 +99,29 @@ namespace Ascent.Editor
                 anchors.layerHosts.Add(new SceneAnchors.NamedTransform { id = layer.Id, transform = host });
             }
 
-            // --- Neutral environment (HDRP volume/terrain added interactively) ---
+            // --- HDRP environment: lit ground, directional sun, global volume ---
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";
             ground.transform.localScale = new Vector3(200f, 1f, 200f);
+            AssignHdrpMaterial(ground, "Ground", new Color(0.80f, 0.74f, 0.62f)); // White Sands gypsum tone
 
             var sunGo = new GameObject("Sun");
             var sun = sunGo.AddComponent<Light>();
             sun.type = LightType.Directional;
             sun.intensity = 1.1f;
             sunGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+
+            // Global volume: an empty profile lets the HDRP pipeline defaults
+            // (sky, exposure, tonemapping) drive the look; overrides are authored
+            // interactively on top of this anchor.
+            var volumeGo = new GameObject("GlobalVolume");
+            var volume = volumeGo.AddComponent<Volume>();
+            volume.isGlobal = true;
+            volume.priority = 0f;
+            var profile = ScriptableObject.CreateInstance<VolumeProfile>();
+            System.IO.Directory.CreateDirectory("Assets/Ascent/Rendering");
+            AssetDatabase.CreateAsset(profile, "Assets/Ascent/Rendering/GlobalVolume.asset");
+            volume.sharedProfile = profile;
 
             // --- Review shell host (UIDocument wired interactively) ---
             new GameObject("ReviewWorkbench");
@@ -131,7 +145,34 @@ namespace Ascent.Editor
             if (col != null)
                 Object.DestroyImmediate(col);
 
+            // Metallic airframe tone so the vehicle reads under HDRP lighting.
+            AssignHdrpMaterial(body, $"{name}_Mat", new Color(0.55f, 0.57f, 0.60f), metallic: 0.85f, smoothness: 0.55f);
+
             return stage;
+        }
+
+        /// <summary>
+        /// Assigns a fresh HDRP/Lit material to <paramref name="go"/>. Falls back
+        /// silently to whatever shader the renderer already has if the HDRP shader
+        /// cannot be resolved (e.g. a built-in fallback session).
+        /// </summary>
+        private static void AssignHdrpMaterial(
+            GameObject go, string assetName, Color baseColor, float metallic = 0f, float smoothness = 0.4f)
+        {
+            var shader = Shader.Find("HDRP/Lit");
+            if (shader == null)
+                return;
+            var mat = new Material(shader) { name = assetName };
+            mat.SetColor("_BaseColor", baseColor);
+            if (mat.HasProperty("_Metallic"))
+                mat.SetFloat("_Metallic", metallic);
+            if (mat.HasProperty("_Smoothness"))
+                mat.SetFloat("_Smoothness", smoothness);
+            System.IO.Directory.CreateDirectory("Assets/Ascent/Rendering/Materials");
+            AssetDatabase.CreateAsset(mat, $"Assets/Ascent/Rendering/Materials/{assetName}.mat");
+            var renderer = go.GetComponent<Renderer>();
+            if (renderer != null)
+                renderer.sharedMaterial = mat;
         }
 
         private static void PlaceCamera(string id, Transform t)
