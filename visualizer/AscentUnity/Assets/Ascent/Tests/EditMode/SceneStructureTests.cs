@@ -45,7 +45,7 @@ namespace Ascent.Tests.EditMode
         }
 
         [Test]
-        public void SceneHasFiveCamerasOnePerDirectorId()
+        public void SceneHasFiveVirtualCamerasOnePerDirectorId()
         {
             var anchors = OpenAndFindAnchors();
             Assert.That(anchors.cameras.Count, Is.EqualTo(5));
@@ -53,8 +53,19 @@ namespace Ascent.Tests.EditMode
             {
                 var cam = anchors.Camera(id);
                 Assert.That(cam, Is.Not.Null, id);
-                Assert.That(cam.GetComponent<Camera>(), Is.Not.Null, $"{id} lacks a Camera");
+                Assert.That(cam.GetComponent<Unity.Cinemachine.CinemachineCamera>(), Is.Not.Null,
+                    $"{id} lacks a CinemachineCamera");
             }
+        }
+
+        [Test]
+        public void SceneHasOneBrainCameraDrivingTheVcams()
+        {
+            var anchors = OpenAndFindAnchors();
+            Assert.That(anchors.reviewCamera, Is.Not.Null, "review camera");
+            Assert.That(anchors.reviewCamera.GetComponent<Camera>(), Is.Not.Null, "review camera lacks a Camera");
+            Assert.That(anchors.reviewCamera.GetComponent<Unity.Cinemachine.CinemachineBrain>(), Is.Not.Null,
+                "review camera lacks a CinemachineBrain");
         }
 
         [Test]

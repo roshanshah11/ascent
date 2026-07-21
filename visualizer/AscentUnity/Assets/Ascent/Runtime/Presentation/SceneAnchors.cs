@@ -20,8 +20,11 @@ namespace Ascent.Runtime.Presentation
         [Tooltip("Sustainer (Black Brant) stage root.")]
         public Transform sustainerStage;
 
-        [Tooltip("Parent of the five camera rigs, indexed by CameraDirector.Ids.")]
+        [Tooltip("Parent of the five virtual cameras, indexed by CameraDirector.Ids.")]
         public Transform cameraRig;
+
+        [Tooltip("The single rendering camera carrying the CinemachineBrain.")]
+        public Transform reviewCamera;
 
         [Tooltip("Parent of the per-layer host objects.")]
         public Transform engineeringLayers;

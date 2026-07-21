@@ -79,17 +79,31 @@ namespace Ascent.Editor
             // --- Trace-driven exhaust plume at the nozzle (base of the stack) ---
             anchors.plume = BuildPlume(vehicle).transform;
 
-            // --- Five camera rigs, one per CameraDirector id ---
+            // --- One rendering camera with a Cinemachine brain + five vcams ---
+            var reviewCam = new GameObject("ReviewCamera");
+            reviewCam.AddComponent<Camera>();
+            reviewCam.AddComponent<Unity.Cinemachine.CinemachineBrain>();
+            anchors.reviewCamera = reviewCam.transform;
+
             var rig = new GameObject(CameraRigName).transform;
             anchors.cameraRig = rig;
+            var cameraRigComp = rig.gameObject.AddComponent<CameraRig>();
             foreach (var id in CameraDirector.Ids)
             {
-                var camGo = new GameObject($"Camera_{id}");
+                var camGo = new GameObject($"Vcam_{id}");
                 camGo.transform.SetParent(rig, false);
-                var cam = camGo.AddComponent<Camera>();
-                cam.enabled = id == CameraDirector.Pad; // pad establishes scale first
+                var vcam = camGo.AddComponent<Unity.Cinemachine.CinemachineCamera>();
+                // Pad establishes scale first; it starts as the live shot.
+                vcam.Priority = id == CameraDirector.Pad ? CameraRig.ActivePriority : CameraRig.IdlePriority;
+                // Tracking shots follow the vehicle; pad and inspection are static.
+                if (id == CameraDirector.Chase || id == CameraDirector.Onboard || id == CameraDirector.GroundTracking)
+                {
+                    vcam.Follow = vehicle;
+                    vcam.LookAt = vehicle;
+                }
                 PlaceCamera(id, camGo.transform);
                 anchors.cameras.Add(new SceneAnchors.NamedTransform { id = id, transform = camGo.transform });
+                cameraRigComp.vcams.Add(new SceneAnchors.NamedTransform { id = id, transform = camGo.transform });
             }
 
             // --- Engineering-layer host objects, one per always-on layer ---

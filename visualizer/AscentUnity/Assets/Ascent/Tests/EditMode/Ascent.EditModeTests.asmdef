@@ -4,6 +4,7 @@
     "references": [
         "Ascent.Runtime",
         "Unity.Nuget.Newtonsoft.Json",
+        "Unity.Cinemachine",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],
