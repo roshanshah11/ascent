@@ -35,6 +35,9 @@ namespace Ascent.Runtime.Presentation
         [Tooltip("Review shell host carrying the live UIDocument + ReviewHud.")]
         public Transform reviewShell;
 
+        [Tooltip("White Sands gypsum terrain the pad sits on.")]
+        public Transform terrain;
+
         [Tooltip("Named camera anchors keyed by camera id.")]
         public List<NamedTransform> cameras = new List<NamedTransform>();
 

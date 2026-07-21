@@ -117,11 +117,8 @@ namespace Ascent.Editor
                 anchors.layerHosts.Add(new SceneAnchors.NamedTransform { id = layer.Id, transform = host });
             }
 
-            // --- HDRP environment: lit ground, directional sun, global volume ---
-            var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
-            ground.name = "Ground";
-            ground.transform.localScale = new Vector3(200f, 1f, 200f);
-            AssignHdrpMaterial(ground, "Ground", new Color(0.80f, 0.74f, 0.62f)); // White Sands gypsum tone
+            // --- HDRP environment: White Sands terrain, directional sun, volume ---
+            anchors.terrain = BuildTerrain().transform;
 
             var sunGo = new GameObject("Sun");
             var sun = sunGo.AddComponent<Light>();
@@ -214,6 +211,80 @@ namespace Ascent.Editor
 
             go.AddComponent<PlumeController>();
             return go;
+        }
+
+        /// <summary>
+        /// Builds the White Sands gypsum terrain the pad sits on: a deterministic
+        /// dune heightfield that stays flat around the origin (so the vehicle rests
+        /// at ground level) and rises toward the edges. The gypsum tone comes from a
+        /// solid TerrainLayer; the HDRP terrain material is applied when available.
+        /// Terrain creation always yields a valid ground even if a shader is missing.
+        /// </summary>
+        private static Transform BuildTerrain()
+        {
+            const int res = 129;                 // heightmap resolution (2^n + 1)
+            const float extent = 600f;           // terrain span in metres
+            const float maxHeight = 18f;         // dune amplitude
+            const float padRadius = 60f;         // flat launch apron radius (metres)
+
+            var data = new TerrainData
+            {
+                heightmapResolution = res,
+                size = new Vector3(extent, maxHeight, extent),
+            };
+
+            var heights = new float[res, res];
+            float half = extent / 2f;
+            for (int y = 0; y < res; y++)
+            {
+                for (int x = 0; x < res; x++)
+                {
+                    // World offset from the terrain centre (origin sits at centre).
+                    float wx = (x / (float)(res - 1)) * extent - half;
+                    float wz = (y / (float)(res - 1)) * extent - half;
+                    // Deterministic crossed sine dunes (no RNG — repeatable builds).
+                    float dune = 0.5f
+                        + 0.28f * Mathf.Sin(wx * 0.018f)
+                        + 0.18f * Mathf.Sin(wz * 0.026f + 1.3f)
+                        + 0.10f * Mathf.Sin((wx + wz) * 0.011f);
+                    // Flatten to zero within the pad apron, easing out to full dunes.
+                    float d = Mathf.Sqrt(wx * wx + wz * wz);
+                    float apron = Mathf.Clamp01((d - padRadius) / padRadius);
+                    heights[y, x] = Mathf.Clamp01(dune) * apron;
+                }
+            }
+            data.SetHeights(0, 0, heights);
+
+            System.IO.Directory.CreateDirectory("Assets/Ascent/Rendering");
+            var gypsum = MakeSolidTexture(new Color(0.87f, 0.84f, 0.77f), "WhiteSandsGypsum");
+            var layer = new TerrainLayer { diffuseTexture = gypsum, tileSize = new Vector2(30f, 30f) };
+            AssetDatabase.CreateAsset(layer, "Assets/Ascent/Rendering/WhiteSandsLayer.terrainlayer");
+            data.terrainLayers = new[] { layer };
+            AssetDatabase.CreateAsset(data, "Assets/Ascent/Rendering/WhiteSandsTerrain.asset");
+
+            var go = Terrain.CreateTerrainGameObject(data);
+            go.name = "WhiteSandsTerrain";
+            go.transform.position = new Vector3(-half, 0f, -half); // centre the flat apron on origin
+
+            var terrain = go.GetComponent<Terrain>();
+            var terrainShader = Shader.Find("HDRP/TerrainLit");
+            if (terrain != null && terrainShader != null)
+                terrain.materialTemplate = new Material(terrainShader) { name = "WhiteSandsTerrainMat" };
+
+            return go.transform;
+        }
+
+        /// <summary>Creates and saves a small solid-colour texture asset.</summary>
+        private static Texture2D MakeSolidTexture(Color color, string assetName)
+        {
+            var tex = new Texture2D(4, 4, TextureFormat.RGBA32, false) { name = assetName };
+            var pixels = new Color[16];
+            for (int i = 0; i < pixels.Length; i++)
+                pixels[i] = color;
+            tex.SetPixels(pixels);
+            tex.Apply();
+            AssetDatabase.CreateAsset(tex, $"Assets/Ascent/Rendering/{assetName}.asset");
+            return tex;
         }
 
         /// <summary>

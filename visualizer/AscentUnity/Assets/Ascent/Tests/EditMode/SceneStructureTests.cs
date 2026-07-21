@@ -101,6 +101,20 @@ namespace Ascent.Tests.EditMode
         }
 
         [Test]
+        public void SceneHasWhiteSandsTerrainWithAFlatPadAtOrigin()
+        {
+            var anchors = OpenAndFindAnchors();
+            Assert.That(anchors.terrain, Is.Not.Null, "terrain anchor");
+            var terrain = anchors.terrain.GetComponent<Terrain>();
+            Assert.That(terrain, Is.Not.Null, "terrain host lacks a Terrain component");
+            Assert.That(terrain.terrainData, Is.Not.Null, "terrain has no TerrainData");
+            Assert.That(terrain.terrainData.size.x, Is.GreaterThan(0f), "terrain has zero extent");
+            // The launch apron must be flat: sampled height at the origin is ~0.
+            float h = terrain.SampleHeight(Vector3.zero) + anchors.terrain.position.y;
+            Assert.That(h, Is.LessThan(0.5f), "pad apron at origin must be flat");
+        }
+
+        [Test]
         public void SceneHasReviewShellWithLiveUiDocument()
         {
             var anchors = OpenAndFindAnchors();
