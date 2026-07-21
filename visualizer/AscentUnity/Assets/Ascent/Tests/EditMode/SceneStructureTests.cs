@@ -101,6 +101,18 @@ namespace Ascent.Tests.EditMode
         }
 
         [Test]
+        public void SceneHasReviewShellWithLiveUiDocument()
+        {
+            var anchors = OpenAndFindAnchors();
+            Assert.That(anchors.reviewShell, Is.Not.Null, "review shell anchor");
+            var doc = anchors.reviewShell.GetComponent<UnityEngine.UIElements.UIDocument>();
+            Assert.That(doc, Is.Not.Null, "review shell lacks a UIDocument");
+            Assert.That(doc.visualTreeAsset, Is.Not.Null, "UIDocument has no source UXML");
+            Assert.That(doc.panelSettings, Is.Not.Null, "UIDocument has no PanelSettings");
+            Assert.That(anchors.reviewShell.GetComponent<ReviewHud>(), Is.Not.Null, "review shell lacks ReviewHud");
+        }
+
+        [Test]
         public void UiToolkitWorkbenchAssetsExist()
         {
             Assert.That(System.IO.File.Exists("Assets/Ascent/UI/ReviewWorkbench.uxml"), Is.True);

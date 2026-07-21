@@ -32,6 +32,9 @@ namespace Ascent.Runtime.Presentation
         [Tooltip("Exhaust plume emitter at the active nozzle (trace-driven).")]
         public Transform plume;
 
+        [Tooltip("Review shell host carrying the live UIDocument + ReviewHud.")]
+        public Transform reviewShell;
+
         [Tooltip("Named camera anchors keyed by camera id.")]
         public List<NamedTransform> cameras = new List<NamedTransform>();
 

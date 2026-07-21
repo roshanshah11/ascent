@@ -5,6 +5,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
+using UnityEngine.UIElements;
 
 namespace Ascent.Editor
 {
@@ -140,8 +141,16 @@ namespace Ascent.Editor
             AssetDatabase.CreateAsset(profile, "Assets/Ascent/Rendering/GlobalVolume.asset");
             volume.sharedProfile = profile;
 
-            // --- Review shell host (UIDocument wired interactively) ---
-            new GameObject("ReviewWorkbench");
+            // --- Review shell: live UIDocument mounting the authored workbench ---
+            var workbenchGo = new GameObject("ReviewWorkbench");
+            var uiDoc = workbenchGo.AddComponent<UIDocument>();
+            uiDoc.panelSettings = EnsurePanelSettings();
+            uiDoc.visualTreeAsset =
+                AssetDatabase.LoadAssetAtPath<VisualTreeAsset>("Assets/Ascent/UI/ReviewWorkbench.uxml");
+            if (uiDoc.visualTreeAsset == null)
+                Debug.LogWarning("BlackBrantSceneBuilder: ReviewWorkbench.uxml not found; HUD will be empty");
+            workbenchGo.AddComponent<ReviewHud>();
+            anchors.reviewShell = workbenchGo.transform;
 
             return scene;
         }
@@ -229,6 +238,55 @@ namespace Ascent.Editor
             var renderer = go.GetComponent<Renderer>();
             if (renderer != null)
                 renderer.sharedMaterial = mat;
+        }
+
+        /// <summary>
+        /// Loads (or creates) the shared <see cref="PanelSettings"/> for the review
+        /// HUD, giving it a best-effort default runtime theme. A missing theme only
+        /// leaves the panel unstyled — it still mounts the UXML — so theme failure
+        /// never breaks the build; a designer can assign one interactively later.
+        /// </summary>
+        private static PanelSettings EnsurePanelSettings()
+        {
+            const string path = "Assets/Ascent/UI/AscentPanelSettings.asset";
+            var existing = AssetDatabase.LoadAssetAtPath<PanelSettings>(path);
+            if (existing != null)
+                return existing;
+
+            var settings = ScriptableObject.CreateInstance<PanelSettings>();
+            var theme = EnsureRuntimeTheme();
+            if (theme != null)
+                settings.themeStyleSheet = theme;
+            System.IO.Directory.CreateDirectory("Assets/Ascent/UI");
+            AssetDatabase.CreateAsset(settings, path);
+            return settings;
+        }
+
+        /// <summary>
+        /// Best-effort load/creation of the default runtime theme. Returns null on
+        /// any failure; callers treat a null theme as "render unstyled".
+        /// </summary>
+        private static ThemeStyleSheet EnsureRuntimeTheme()
+        {
+            const string themePath = "Assets/Ascent/UI/AscentRuntimeTheme.tss";
+            var existing = AssetDatabase.LoadAssetAtPath<ThemeStyleSheet>(themePath);
+            if (existing != null)
+                return existing;
+            try
+            {
+                if (!System.IO.File.Exists(themePath))
+                {
+                    // The canonical default runtime theme is a single engine import.
+                    System.IO.File.WriteAllText(themePath, "@import url(\"unity-theme://default\");\n");
+                    AssetDatabase.ImportAsset(themePath, ImportAssetOptions.ForceSynchronousImport);
+                }
+                return AssetDatabase.LoadAssetAtPath<ThemeStyleSheet>(themePath);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"BlackBrantSceneBuilder: could not create runtime theme ({ex.Message}); HUD renders unstyled");
+                return null;
+            }
         }
 
         private static void PlaceCamera(string id, Transform t)
