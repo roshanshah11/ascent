@@ -76,6 +76,9 @@ namespace Ascent.Editor
             anchors.boosterStage = booster;
             anchors.sustainerStage = sustainer;
 
+            // --- Trace-driven exhaust plume at the nozzle (base of the stack) ---
+            anchors.plume = BuildPlume(vehicle).transform;
+
             // --- Five camera rigs, one per CameraDirector id ---
             var rig = new GameObject(CameraRigName).transform;
             anchors.cameraRig = rig;
@@ -149,6 +152,45 @@ namespace Ascent.Editor
             AssignHdrpMaterial(body, $"{name}_Mat", new Color(0.55f, 0.57f, 0.60f), metallic: 0.85f, smoothness: 0.55f);
 
             return stage;
+        }
+
+        /// <summary>
+        /// Builds the exhaust plume: a downward cone <see cref="ParticleSystem"/>
+        /// at the nozzle, driven at runtime by <see cref="PlumeController"/> from
+        /// the trace's powered intervals. Emission starts off; the controller
+        /// turns it on during burns.
+        /// </summary>
+        private static GameObject BuildPlume(Transform vehicle)
+        {
+            var go = new GameObject("ExhaustPlume");
+            go.transform.SetParent(vehicle, false);
+            go.transform.localPosition = new Vector3(0f, -0.2f, 0f); // just below the nozzle
+            go.transform.localRotation = Quaternion.Euler(90f, 0f, 0f); // emit downward (-Y)
+
+            var ps = go.AddComponent<ParticleSystem>();
+            var main = ps.main;
+            main.startLifetime = 0.6f;
+            main.startSpeed = 0f; // controller sets speed when powered
+            main.startSize = 0.6f;
+            main.startColor = new Color(1.0f, 0.75f, 0.4f, 0.9f); // hot exhaust
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.maxParticles = 2000;
+
+            var emission = ps.emission;
+            emission.rateOverTime = 0f; // off until the controller detects a burn
+
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Cone;
+            shape.angle = 12f;
+            shape.radius = 0.2f;
+
+            // Stop auto-play; the controller drives Play/Stop from trace state.
+            var emissionModule = ps.emission;
+            emissionModule.enabled = true;
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmitting);
+
+            go.AddComponent<PlumeController>();
+            return go;
         }
 
         /// <summary>

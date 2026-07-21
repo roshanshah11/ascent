@@ -78,6 +78,18 @@ namespace Ascent.Tests.EditMode
         }
 
         [Test]
+        public void SceneHasTraceDrivenPlume()
+        {
+            var anchors = OpenAndFindAnchors();
+            Assert.That(anchors.plume, Is.Not.Null, "plume anchor");
+            Assert.That(anchors.plume.GetComponent<ParticleSystem>(), Is.Not.Null, "plume ParticleSystem");
+            Assert.That(anchors.plume.GetComponent<PlumeController>(), Is.Not.Null, "plume controller");
+            // The plume must start idle — it emits only when the trace says powered.
+            Assert.That(anchors.plume.GetComponent<ParticleSystem>().emission.rateOverTime.constant,
+                Is.EqualTo(0f), "plume must start with zero emission");
+        }
+
+        [Test]
         public void UiToolkitWorkbenchAssetsExist()
         {
             Assert.That(System.IO.File.Exists("Assets/Ascent/UI/ReviewWorkbench.uxml"), Is.True);

@@ -26,6 +26,9 @@ namespace Ascent.Runtime.Presentation
         [Tooltip("Parent of the per-layer host objects.")]
         public Transform engineeringLayers;
 
+        [Tooltip("Exhaust plume emitter at the active nozzle (trace-driven).")]
+        public Transform plume;
+
         [Tooltip("Named camera anchors keyed by camera id.")]
         public List<NamedTransform> cameras = new List<NamedTransform>();
 
