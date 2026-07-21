@@ -148,6 +148,9 @@ namespace Ascent.Editor
             if (uiDoc.visualTreeAsset == null)
                 Debug.LogWarning("BlackBrantSceneBuilder: ReviewWorkbench.uxml not found; HUD will be empty");
             workbenchGo.AddComponent<ReviewHud>();
+            // Inert unless a standalone player is launched with -ascent-benchmark;
+            // records packaged FPS for the platform-decision performance gate.
+            workbenchGo.AddComponent<PackagedBenchmark>();
             anchors.reviewShell = workbenchGo.transform;
 
             return scene;

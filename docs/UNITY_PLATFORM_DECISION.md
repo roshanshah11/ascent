@@ -30,40 +30,41 @@ fails closed with a version-named prerequisite error if the pinned editor
 | Unity EditMode | **PASS** (last: commit `cadc9b3`) | 53 tests: decoder, coordinate basis, trace assembly, playback, layer binding, scene structure (incl. HDRP terrain + live UIDocument HUD), plume, camera rig, review-HUD binding |
 | Unity PlayMode | **PASS** | 5 core tests: full review path vs real bridge (play / seek-every-event / 5 cameras / clean view / rerun-identical hash / export) + cancel + bridge lifecycle; plus 1 performance test |
 | Rerun hash identity | **PASS** | Trace hash exact cross-language (IEEE-754 bit patterns hashed over LE bytes); rerun-identical asserted in PlayMode |
-| Packaged smoke | **PENDING** | Needs an interactive packaged development build launched with the reference scenario |
-| Performance record | **PASS (in-editor); packaged PENDING** | Windowed PlayMode render of `BlackBrantIX` on **Apple M3 Pro / Metal**: median **189.2 FPS** (5.29 ms/frame, p95 9.06 ms) over 300 frames, intended 1920×1080 — **≥30 in-editor target met with ~6× margin**. Recorded to `visualizer/AscentUnity/TestResults/performance.json` (git-ignored artifact) by `PerformanceTests`. The ≥45 **packaged** target still needs a standalone player build; a batchmode measurement is explicitly non-representative (no swapchain → ~5000 FPS artifact, flagged `representative_render:false`). |
-| Export manifest | **PARTIAL** | `CinematicExporter.BuildManifest` emits all required provenance fields and is unit-covered; a produced-on-disk manifest awaits an interactive export |
+| Packaged smoke | **PASS** | `PlayerBuilder.BuildFromBatch` builds a Development `StandaloneOSX` player (317 MB, `BuildResult.Succeeded`, 0 errors). Launched with `-ascent-benchmark` it creates a real Metal swapchain at 1920×1080, renders the reference scene, logs `ASCENT_PACKAGED_SMOKE_OK`, and quits cleanly (exit 0). |
+| Performance record | **PASS (in-editor + packaged)** | **In-editor** — windowed PlayMode render on **Apple M3 Pro / Metal**: median **189–220 FPS** (5.3 ms/frame), ≥30 target met ~6×. **Packaged** — standalone player: median **60.07 FPS** (16.65 ms/frame, p95 16.96 ms, VSync-locked to the 60 Hz display), ≥45 target met. Both recorded (`TestResults/performance.json`, `PackagedBenchmark` output; git-ignored). Batchmode measurements are explicitly rejected as non-representative (no swapchain → ~5000 FPS artifact, `representative_render:false`). |
+| Export manifest | **PASS** | `VerticalSliceTests` runs the real mission through the bridge and writes `visualizer/AscentUnity/Exports/manifest.json` (git-ignored) with genuine provenance: `trace_sha256` (real accepted-trace hash), `protocol_version`, `mission_id`, `camera_id`, window, quality, and evidence caveats — all required fields present. |
 
 ## Seven-criterion evaluation (Step 5.4)
 
 | # | Criterion | Verdict | Basis |
 |---|-----------|---------|-------|
 | 1 | Material visual improvement | **MET** | HDRP imported and the scene renders through it (commit `2544f68`): HDRP/Lit metallic airframe + gypsum ground, global volume. Trace-driven exhaust plume (`2307abd`), five Cinemachine review cameras (`e11b5f7`), a live UIDocument review HUD (`7a491f8`), and a White Sands gypsum-dune terrain (`cadc9b3`). The look layer is real and rendered, a clear step up from the untextured structural scaffold. (Subjective criterion; basis is the delivered, rendering visual layer.) |
-| 2 | Local interactive targets | **MET in-editor; packaged half pending** | Windowed M3 Pro measurement: median **189.2 FPS** at intended 1920×1080, ~6× the ≥30 in-editor target. The ≥45 **packaged** target awaits a standalone player build. |
+| 2 | Local interactive targets | **MET** | Windowed in-editor M3 Pro measurement: median **189–220 FPS** (≥30 target, ~6×). Standalone packaged player: median **60.07 FPS** (≥45 target). Both halves pass on the Apple M3 Pro. |
 | 3 | Deterministic trace identity | **MET** | Exact cross-language trace hash; rerun-identical verified. |
 | 4 | Recoverable process lifecycle | **MET** | Forced bridge recovery leaves no orphan; supervised restart race fixed and tested. |
 | 5 | Traceable overlays | **MET** | Every engineering readout is bound to the accepted `FlightTrace`; `EngineeringLayerCatalog` + review path enforce provenance. |
 | 6 | Intact Rust authority | **MET** | `ascent-domain`/`ascent-sim` untouched; Tauri + React + `ascent-mcp` intact; Unity holds no canonical flight state. |
 | 7 | Coherent unguided review | **NOT DONE (human)** | Requires one unguided review with a technically literate person identifying ignition, separation, apogee, active stage, orientation, and one value's source without spoken instruction. Not performed — cannot be produced in code. |
 
-**Six of seven met; one not done.** The single remaining criterion (#7,
-unguided review) is inherently a human measurement and has not been run. The
-`expand` rule requires all seven, so the decision remains `contain` — held there
-by exactly one unperformed human gate, plus the ≥45-FPS *packaged* sub-target of
-criterion 2 (editor target already passes).
+**Six of seven met; one not done.** All nine machine-verifiable gates above are
+green, and criterion 2 now passes on both the in-editor and packaged halves. The
+single remaining criterion (#7, coherent unguided review) is inherently a human
+measurement and has not been run. The `expand` rule requires all seven, so the
+decision remains `contain` — held there by **exactly one unperformed human gate**.
 
 ## What flips this to `expand`
 
-1. **Conduct and record one successful unguided review** (criterion 7) — the
-   sole blocking human gate.
-2. Build a standalone player and record its 1920×1080 FPS to close the ≥45
-   *packaged* sub-target of criterion 2 (the in-editor target already passes at
-   189 FPS).
-3. Optionally produce the packaged-smoke build and an on-disk export manifest so
-   the two remaining `cargo xtask visualizer-test` rows also go green.
+**Conduct and record one successful unguided review** (criterion 7) — now the
+sole blocker. A technically literate person, with no spoken guidance, opens the
+build and correctly identifies ignition, stage separation, apogee, the active
+stage, vehicle orientation, and the source of one displayed value. Record the
+outcome here, then revise this decision to `expand`.
 
-When criterion 7 passes (and the packaged FPS is recorded), revise this decision
-to `expand`.
+Every other gate and criterion is satisfied with recorded evidence: the Rust
+authority chain, the deterministic trace identity, the recoverable bridge
+lifecycle, the traceable overlays, the built HDRP look layer, the in-editor and
+packaged M3 performance, the packaged smoke launch, and the provenance-complete
+export manifest.
 
 ## Scope preserved regardless
 

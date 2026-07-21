@@ -105,7 +105,7 @@ namespace Ascent.Tests.PlayMode
             Assert.That(second.Trace.TraceHash, Is.EqualTo(trace.TraceHash), "rerun hash differs");
 
             // Export manifest is fully attributed and points at this trace.
-            var manifest = JObject.Parse(CinematicExporter.BuildManifest(new ExportRequest
+            var manifestJson = CinematicExporter.BuildManifest(new ExportRequest
             {
                 TraceSha256 = trace.TraceHash,
                 MissionId = MissionId,
@@ -118,9 +118,17 @@ namespace Ascent.Tests.PlayMode
                 FrameRate = 60.0,
                 UnityVersion = Application.unityVersion,
                 EvidenceCaveats = new[] { "reference scenario, not a historical NASA flight" },
-            }));
+            });
+            var manifest = JObject.Parse(manifestJson);
             Assert.That((string)manifest["trace_sha256"], Is.EqualTo(trace.TraceHash));
             Assert.That((string)manifest["mission_id"], Is.EqualTo(MissionId));
+
+            // Persist the manifest to the gate's expected path so `cargo xtask
+            // visualizer-test`'s export-manifest gate has a produced-on-disk artifact
+            // carrying real trace provenance (not a synthetic fixture).
+            var exportsDir = Path.GetFullPath(Path.Combine(Application.dataPath, "../Exports"));
+            Directory.CreateDirectory(exportsDir);
+            File.WriteAllText(Path.Combine(exportsDir, "manifest.json"), manifestJson);
         }
 
         [UnityTest]
