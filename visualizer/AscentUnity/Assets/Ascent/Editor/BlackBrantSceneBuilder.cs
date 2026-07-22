@@ -79,7 +79,8 @@ namespace Ascent.Editor
             anchors.sustainerStage = sustainer;
 
             // --- Trace-driven exhaust plume at the nozzle (base of the stack) ---
-            anchors.plume = BuildPlume(vehicle).transform;
+            var plumeGo = BuildPlume(vehicle);
+            anchors.plume = plumeGo.transform;
 
             // --- One rendering camera with a Cinemachine brain + five vcams ---
             var reviewCam = new GameObject("ReviewCamera");
@@ -147,10 +148,19 @@ namespace Ascent.Editor
                 AssetDatabase.LoadAssetAtPath<VisualTreeAsset>("Assets/Ascent/UI/ReviewWorkbench.uxml");
             if (uiDoc.visualTreeAsset == null)
                 Debug.LogWarning("BlackBrantSceneBuilder: ReviewWorkbench.uxml not found; HUD will be empty");
-            workbenchGo.AddComponent<ReviewHud>();
+            var hud = workbenchGo.AddComponent<ReviewHud>();
             // Inert unless a standalone player is launched with -ascent-benchmark;
             // records packaged FPS for the platform-decision performance gate.
             workbenchGo.AddComponent<PackagedBenchmark>();
+
+            // The runtime driver: launches the bridge, runs the mission to an
+            // accepted trace, binds the HUD + playback, and drives the vehicle and
+            // plume from the trace. Without it the scene shows only an idle shell.
+            var bootstrap = workbenchGo.AddComponent<ReviewBootstrap>();
+            bootstrap.anchors = anchors;
+            bootstrap.hud = hud;
+            bootstrap.plume = plumeGo.GetComponent<PlumeController>();
+
             anchors.reviewShell = workbenchGo.transform;
 
             return scene;

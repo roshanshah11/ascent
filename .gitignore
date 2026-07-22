@@ -15,6 +15,10 @@ visualizer/AscentUnity/[Uu]ser[Ss]ettings/
 visualizer/AscentUnity/[Mm]emoryCaptures/
 visualizer/AscentUnity/TestResults/
 visualizer/AscentUnity/[Ee]xports/
+# Bridge binary staged into StreamingAssets at build time (generated, large)
+visualizer/AscentUnity/Assets/StreamingAssets/ascent-visualizer-bridge
+visualizer/AscentUnity/Assets/StreamingAssets/ascent-visualizer-bridge.meta
+visualizer/AscentUnity/Assets/StreamingAssets.meta
 *.csproj
 *.sln
 *.pidb

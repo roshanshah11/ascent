@@ -6,6 +6,7 @@
       carries units, validity, and evidence status. Wiring lives in the runtime
       ReviewWorkbench controller.
     -->
+    <Style src="ReviewWorkbench.uss" />
     <ui:VisualElement name="root" class="ascent-root">
         <ui:VisualElement name="top-bar" class="top-bar">
             <ui:Label name="mission-name" text="NASA Black Brant IX (reference)" class="mission-name" />

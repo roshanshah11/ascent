@@ -1,4 +1,5 @@
 using System.IO;
+using Ascent.Runtime.Bridge;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
@@ -30,6 +31,8 @@ namespace Ascent.Editor
                     return;
                 }
 
+                StageBridgeBinary();
+
                 Directory.CreateDirectory(OutputDir);
                 var options = new BuildPlayerOptions
                 {
@@ -51,6 +54,30 @@ namespace Ascent.Editor
                 Debug.LogError($"PlayerBuilder failed: {ex}");
                 EditorApplication.Exit(6);
             }
+        }
+
+        /// <summary>
+        /// Copies the Cargo-built read-only bridge into <c>Assets/StreamingAssets</c>
+        /// so it ships inside the player (macOS: <c>.app/Contents/Resources/Data/
+        /// StreamingAssets</c>). The runtime restores the executable bit on launch.
+        /// Fails the build if the binary is absent — a player without it cannot run
+        /// the review.
+        /// </summary>
+        private static void StageBridgeBinary()
+        {
+            // Application.dataPath = <repo>/visualizer/AscentUnity/Assets
+            var src = Path.GetFullPath(Path.Combine(
+                Application.dataPath, "../../../target/debug/" + BridgeLocator.ExecutableName));
+            if (!File.Exists(src))
+                throw new FileNotFoundException(
+                    $"bridge binary missing at {src}; run `cargo build -p ascent-visualizer-bridge`");
+
+            var dstDir = Path.Combine(Application.dataPath, "StreamingAssets");
+            Directory.CreateDirectory(dstDir);
+            var dst = Path.Combine(dstDir, BridgeLocator.ExecutableName);
+            File.Copy(src, dst, overwrite: true);
+            AssetDatabase.Refresh();
+            Debug.Log($"PlayerBuilder: staged bridge → {dst}");
         }
     }
 }
