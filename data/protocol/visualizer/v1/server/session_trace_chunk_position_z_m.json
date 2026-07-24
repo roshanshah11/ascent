@@ -1,0 +1,17 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-session-chunk-position-z-m",
+  "request_id": "req-1",
+  "kind": "session_trace_chunk",
+  "payload": {
+    "kind": "session_trace_chunk",
+    "session_id": "sess-1",
+    "channel": "position_z_m",
+    "sequence": 0,
+    "samples": [
+      0,
+      4609434218613702656,
+      4618441417868443648
+    ]
+  }
+}

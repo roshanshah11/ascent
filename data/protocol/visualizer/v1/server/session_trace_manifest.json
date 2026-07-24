@@ -1,0 +1,23 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-session-manifest",
+  "request_id": "req-1",
+  "kind": "session_trace_manifest",
+  "payload": {
+    "kind": "session_trace_manifest",
+    "session_id": "sess-1",
+    "trace_hash": "36ab74cbc864b44f0cea106645e0ee52de262c243b3b879583b088cf72b78f97",
+    "sample_count": 3,
+    "event_count": 2,
+    "channels": [
+      {
+        "name": "time_s",
+        "sample_count": 3
+      },
+      {
+        "name": "position_z_m",
+        "sample_count": 3
+      }
+    ]
+  }
+}

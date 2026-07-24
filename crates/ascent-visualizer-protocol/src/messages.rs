@@ -6,6 +6,7 @@
 //! kinds are closed sets — anything else is a protocol violation.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// Wire protocol version. Bumped only on a breaking envelope/message change.
 pub const PROTOCOL_VERSION: u16 = 1;
@@ -15,6 +16,21 @@ pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
 /// Maximum samples carried by a single [`ServerMessage::TraceChannelChunk`].
 pub const MAX_CHUNK_SAMPLES: usize = 1_024;
+
+/// Upper bound on `AdvanceSteps.steps` for one interactive-session advance.
+///
+/// A single request may advance the shared coordinator by at most this many
+/// fixed core steps; a client time-warps by issuing more calls, never by one
+/// unbounded call. `steps` outside `1..=MAX_ADVANCE_STEPS` is an operational
+/// error (`INVALID_REQUEST`, connection stays). This is a protocol constant
+/// pinned identically in Rust and the Unity client — not a tuning knob.
+pub const MAX_ADVANCE_STEPS: u64 = 10_000;
+
+/// Capability string for the stepped, live-controllable review session layered
+/// over the v1 stdio bridge. Negotiated in [`ClientRequest::Hello`] /
+/// [`ServerMessage::HelloAck`] `capabilities`; a client that did not negotiate
+/// it may not send any session request.
+pub const CAP_INTERACTIVE_SESSION_V1: &str = "interactive-session/1";
 
 /// A framed protocol message: fixed envelope fields plus a typed payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -50,10 +66,15 @@ pub trait Kinded {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ClientRequest {
-    /// First message; negotiates the protocol version.
+    /// First message; negotiates the protocol version and, additively, the set
+    /// of optional capabilities the client supports. An absent/empty
+    /// `capabilities` is a pure v1 client. Unknown capability strings are
+    /// ignored during negotiation.
     Hello {
         client: String,
         protocol_version: u16,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        capabilities: Vec<String>,
     },
     /// Ask for the catalog of runnable missions.
     ListMissions,
@@ -61,6 +82,18 @@ pub enum ClientRequest {
     RunMission { mission_id: String },
     /// Cancel the active run.
     CancelRun { run_id: String },
+    /// Open a stepped, live-controllable review session from an inline
+    /// immutable mission snapshot. Requires negotiated
+    /// [`CAP_INTERACTIVE_SESSION_V1`]. The snapshot is carried opaquely at this
+    /// layer (a JSON object with a `schema_version`); the bridge deserializes
+    /// and validates it. See the interactive-session protocol contract.
+    CreateSession { snapshot: Value },
+    /// Advance an open session by a fixed count of core steps. `steps` must lie
+    /// in `1..=MAX_ADVANCE_STEPS`.
+    AdvanceSteps { session_id: String, steps: u64 },
+    /// Drive a session to its `SessionCancelled` terminal state
+    /// (idempotent-with-ack).
+    Cancel { session_id: String },
     /// Shut the bridge down cleanly.
     Shutdown,
 }
@@ -72,6 +105,9 @@ impl Kinded for ClientRequest {
             ClientRequest::ListMissions => "list_missions",
             ClientRequest::RunMission { .. } => "run_mission",
             ClientRequest::CancelRun { .. } => "cancel_run",
+            ClientRequest::CreateSession { .. } => "create_session",
+            ClientRequest::AdvanceSteps { .. } => "advance_steps",
+            ClientRequest::Cancel { .. } => "cancel",
             ClientRequest::Shutdown => "shutdown",
         }
     }
@@ -84,6 +120,10 @@ pub enum ServerMessage {
     HelloAck {
         server: String,
         protocol_version: u16,
+        /// The intersection of client-offered and server-supported
+        /// capabilities. Empty/absent means a pure v1 session.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        capabilities: Vec<String>,
     },
     MissionCatalog {
         missions: Vec<MissionEntry>,
@@ -123,10 +163,91 @@ pub enum ServerMessage {
     RunCancelled {
         run_id: String,
     },
+    /// Acknowledges a valid `CreateSession`. `config_hash` is an opaque
+    /// Rust-issued identity string the client stores and echoes, never parses.
+    SessionCreated {
+        session_id: String,
+        config_hash: String,
+        schema_version: u16,
+    },
+    /// Latest-state-only snapshot after one `AdvanceSteps`. All floating-point
+    /// fields (`sim_time_s`, `position_m`, `velocity_ms`, `attitude_wxyz`,
+    /// `thrust_n`) are i64 IEEE-754 bit patterns — decode with
+    /// `f64::from_bits(bits as u64)`. `new_events` are only the events crossed
+    /// since the previous update; the full event set arrives in
+    /// [`ServerMessage::SessionTraceEvents`] at completion.
+    StateUpdate {
+        session_id: String,
+        outcome: AdvanceStateOutcome,
+        step_cursor: u64,
+        sim_time_s: i64,
+        position_m: [i64; 3],
+        velocity_ms: [i64; 3],
+        attitude_wxyz: [i64; 4],
+        phase: String,
+        stage_index: u32,
+        /// Rust-issued active-stage propulsion magnitude in newtons, as an
+        /// IEEE-754 bit pattern. Drives live plume rendering; the client must
+        /// not derive propulsion physics itself. `0` between burns.
+        thrust_n: i64,
+        new_events: Vec<TraceEvent>,
+    },
+    /// Trace summary at normal completion, before the channel chunks. Distinct
+    /// from the legacy `TraceManifest`; keyed by `session_id`, not `run_id`.
+    SessionTraceManifest {
+        session_id: String,
+        trace_hash: String,
+        sample_count: usize,
+        event_count: usize,
+        channels: Vec<ChannelSpec>,
+    },
+    /// One chunk of the full canonical trace, in canonical channel order after
+    /// the manifest. Session-specific; does not reuse legacy
+    /// `TraceChannelChunk` / its `run_id`.
+    SessionTraceChunk {
+        session_id: String,
+        channel: String,
+        sequence: u32,
+        /// IEEE-754 f64 samples as bit patterns (reinterpreted as i64), as in
+        /// [`ServerMessage::TraceChannelChunk`].
+        samples: Vec<i64>,
+    },
+    /// The full, ordered flight event set for the completed run, after the
+    /// channel chunks and before [`ServerMessage::SessionCompleted`]. Events are
+    /// hashed into `trace_hash` alongside the channel samples, so `trace_hash`
+    /// is not verifiable without them.
+    SessionTraceEvents {
+        session_id: String,
+        events: Vec<TraceEvent>,
+    },
+    /// Terminates a normal completion, after the chunks and events. A
+    /// hash-backed trace exists iff this was emitted.
+    SessionCompleted {
+        session_id: String,
+        trace_hash: String,
+    },
+    /// Terminal state for a `Cancel`/`Shutdown` on a session that had not
+    /// completed. No trace, no `trace_hash`. Re-emitted (as acknowledgment) on a
+    /// repeated `Cancel`, correlated to the repeat request's `message_id`.
+    SessionCancelled {
+        session_id: String,
+    },
     Error {
         code: String,
         message: String,
     },
+}
+
+/// Outcome of an `AdvanceSteps` reported by [`ServerMessage::StateUpdate`].
+/// Cancellation is never an advance outcome — it is delivered by the separate
+/// [`ServerMessage::SessionCancelled`].
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AdvanceStateOutcome {
+    /// Steps ran and the flight is still in progress.
+    Advanced,
+    /// The flight reached a terminal condition during (or before) this advance.
+    Completed,
 }
 
 impl Kinded for ServerMessage {
@@ -141,6 +262,13 @@ impl Kinded for ServerMessage {
             ServerMessage::TraceEvents { .. } => "trace_events",
             ServerMessage::RunCompleted { .. } => "run_completed",
             ServerMessage::RunCancelled { .. } => "run_cancelled",
+            ServerMessage::SessionCreated { .. } => "session_created",
+            ServerMessage::StateUpdate { .. } => "state_update",
+            ServerMessage::SessionTraceManifest { .. } => "session_trace_manifest",
+            ServerMessage::SessionTraceChunk { .. } => "session_trace_chunk",
+            ServerMessage::SessionTraceEvents { .. } => "session_trace_events",
+            ServerMessage::SessionCompleted { .. } => "session_completed",
+            ServerMessage::SessionCancelled { .. } => "session_cancelled",
             ServerMessage::Error { .. } => "error",
         }
     }

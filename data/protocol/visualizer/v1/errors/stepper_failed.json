@@ -1,0 +1,11 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-err-stepper_failed",
+  "request_id": "req-1",
+  "kind": "error",
+  "payload": {
+    "kind": "error",
+    "code": "run_failed",
+    "message": "stepper returned an error mid-advance"
+  }
+}

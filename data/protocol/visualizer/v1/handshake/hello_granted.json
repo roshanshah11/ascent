@@ -1,0 +1,13 @@
+{
+  "protocol_version": 1,
+  "message_id": "h-granted",
+  "kind": "hello",
+  "payload": {
+    "kind": "hello",
+    "client": "unity",
+    "protocol_version": 1,
+    "capabilities": [
+      "interactive-session/1"
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "protocol_version": 1,
+  "message_id": "c-cancel-session",
+  "kind": "cancel",
+  "payload": {
+    "kind": "cancel",
+    "session_id": "sess-1"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "protocol_version": 1,
+  "message_id": "h-unknown",
+  "kind": "hello",
+  "payload": {
+    "kind": "hello",
+    "client": "unity",
+    "protocol_version": 1,
+    "capabilities": [
+      "interactive-session/1",
+      "future-capability/9"
+    ]
+  }
+}

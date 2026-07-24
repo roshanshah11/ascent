@@ -1,0 +1,11 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-session-completed",
+  "request_id": "req-1",
+  "kind": "session_completed",
+  "payload": {
+    "kind": "session_completed",
+    "session_id": "sess-1",
+    "trace_hash": "36ab74cbc864b44f0cea106645e0ee52de262c243b3b879583b088cf72b78f97"
+  }
+}

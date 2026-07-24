@@ -1,0 +1,10 @@
+{
+  "protocol_version": 1,
+  "message_id": "c-advance",
+  "kind": "advance_steps",
+  "payload": {
+    "kind": "advance_steps",
+    "session_id": "sess-1",
+    "steps": 100
+  }
+}

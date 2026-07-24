@@ -1,0 +1,26 @@
+{
+  "absent": {
+    "client_offered": [],
+    "negotiated": [],
+    "session_allowed": false
+  },
+  "granted": {
+    "client_offered": [
+      "interactive-session/1"
+    ],
+    "negotiated": [
+      "interactive-session/1"
+    ],
+    "session_allowed": true
+  },
+  "unknown_ignored": {
+    "client_offered": [
+      "interactive-session/1",
+      "future-capability/9"
+    ],
+    "negotiated": [
+      "interactive-session/1"
+    ],
+    "session_allowed": true
+  }
+}

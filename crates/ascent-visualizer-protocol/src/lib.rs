@@ -11,7 +11,8 @@ pub mod trace;
 
 pub use codec::{encode_frame, CodecError, FrameDecoder};
 pub use messages::{
-    error_code, ChannelSpec, ClientRequest, Envelope, Kinded, MissionEntry, ServerMessage,
-    TraceEvent, MAX_CHUNK_SAMPLES, MAX_FRAME_BYTES, PROTOCOL_VERSION,
+    error_code, AdvanceStateOutcome, ChannelSpec, ClientRequest, Envelope, Kinded, MissionEntry,
+    ServerMessage, TraceEvent, CAP_INTERACTIVE_SESSION_V1, MAX_ADVANCE_STEPS, MAX_CHUNK_SAMPLES,
+    MAX_FRAME_BYTES, PROTOCOL_VERSION,
 };
 pub use trace::{trace_hash, Channel};

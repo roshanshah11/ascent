@@ -14,6 +14,7 @@ fn hello_fixture() -> Envelope<ClientRequest> {
         ClientRequest::Hello {
             client: "unity".into(),
             protocol_version: PROTOCOL_VERSION,
+            capabilities: Vec::new(),
         },
     )
 }

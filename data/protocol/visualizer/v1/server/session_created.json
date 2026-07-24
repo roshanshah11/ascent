@@ -1,0 +1,12 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-session-created",
+  "request_id": "req-1",
+  "kind": "session_created",
+  "payload": {
+    "kind": "session_created",
+    "session_id": "sess-1",
+    "config_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "schema_version": 1
+  }
+}

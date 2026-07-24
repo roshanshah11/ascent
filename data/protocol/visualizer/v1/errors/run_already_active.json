@@ -1,0 +1,11 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-err-run_already_active",
+  "request_id": "req-1",
+  "kind": "error",
+  "payload": {
+    "kind": "error",
+    "code": "invalid_request",
+    "message": "a run is already active"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "advance_on_completed": {
+    "code": "invalid_request",
+    "disposition": "stay",
+    "message_prefix": "session already completed"
+  },
+  "advance_steps_exceeds_max": {
+    "code": "invalid_request",
+    "disposition": "stay",
+    "message_prefix": "steps exceeds MAX_ADVANCE_STEPS (10000)"
+  },
+  "before_hello": {
+    "code": "invalid_request",
+    "disposition": "close",
+    "message_prefix": "request received before Hello"
+  },
+  "capability_not_negotiated": {
+    "code": "invalid_request",
+    "disposition": "close",
+    "message_prefix": "capability not negotiated: interactive-session/1"
+  },
+  "duplicate_message_id": {
+    "code": "invalid_request",
+    "disposition": "close",
+    "message_prefix": "duplicate message id"
+  },
+  "framing_violation": {
+    "code": "invalid_request",
+    "disposition": "close",
+    "message_prefix": "framing violation"
+  },
+  "run_already_active": {
+    "code": "invalid_request",
+    "disposition": "stay",
+    "message_prefix": "a run is already active"
+  },
+  "stepper_failed": {
+    "code": "run_failed",
+    "disposition": "stay",
+    "message_prefix": "stepper returned an error mid-advance"
+  },
+  "unknown_schema_version": {
+    "code": "invalid_request",
+    "disposition": "close",
+    "message_prefix": "unsupported snapshot schema_version"
+  },
+  "unknown_session": {
+    "code": "invalid_request",
+    "disposition": "stay",
+    "message_prefix": "unknown session id"
+  }
+}

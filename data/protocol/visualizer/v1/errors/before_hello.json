@@ -1,0 +1,11 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-err-before_hello",
+  "request_id": "req-1",
+  "kind": "error",
+  "payload": {
+    "kind": "error",
+    "code": "invalid_request",
+    "message": "request received before Hello"
+  }
+}

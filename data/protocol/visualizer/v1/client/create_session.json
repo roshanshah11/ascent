@@ -1,0 +1,35 @@
+{
+  "protocol_version": 1,
+  "message_id": "c-create",
+  "kind": "create_session",
+  "payload": {
+    "kind": "create_session",
+    "snapshot": {
+      "config": {
+        "dt_s": 0.02,
+        "max_time_s": 6000.0
+      },
+      "environment": {
+        "kind": "default"
+      },
+      "launch": {
+        "kind": "vertical"
+      },
+      "provenance": {
+        "mission_id": "synthetic.fixture",
+        "sources": []
+      },
+      "recovery": null,
+      "schema_version": 1,
+      "stages": [
+        {
+          "dry_mass_kg": 100.0,
+          "name": "synthetic-sustainer"
+        }
+      ],
+      "wind": {
+        "kind": "calm"
+      }
+    }
+  }
+}

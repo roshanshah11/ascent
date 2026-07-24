@@ -1,0 +1,10 @@
+{
+  "protocol_version": 1,
+  "message_id": "s-session-cancelled",
+  "request_id": "req-1",
+  "kind": "session_cancelled",
+  "payload": {
+    "kind": "session_cancelled",
+    "session_id": "sess-1"
+  }
+}
