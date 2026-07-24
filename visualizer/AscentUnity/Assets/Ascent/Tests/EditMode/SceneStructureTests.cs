@@ -1,6 +1,7 @@
 using System.Linq;
 using Ascent.Runtime.Presentation;
 using NUnit.Framework;
+using Unity.Cinemachine;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -66,6 +67,64 @@ namespace Ascent.Tests.EditMode
             Assert.That(anchors.reviewCamera.GetComponent<Camera>(), Is.Not.Null, "review camera lacks a Camera");
             Assert.That(anchors.reviewCamera.GetComponent<Unity.Cinemachine.CinemachineBrain>(), Is.Not.Null,
                 "review camera lacks a CinemachineBrain");
+        }
+
+        [Test]
+        public void TrackingCameraPresetsSnapAfterTimelineSeek()
+        {
+            var anchors = OpenAndFindAnchors();
+
+            foreach (var id in CameraDirector.Ids)
+            {
+                var composer = anchors.Camera(id).GetComponent<CinemachineRotationComposer>();
+                Assert.That(composer, Is.Not.Null, $"{id} must aim at its shot target");
+                Assert.That(composer.Damping, Is.EqualTo(Vector2.zero),
+                    $"{id} must reframe immediately after a timeline seek");
+            }
+
+            foreach (var id in new[] { CameraDirector.Chase, CameraDirector.Inspection })
+            {
+                var follow = anchors.Camera(id).GetComponent<CinemachineFollow>();
+                Assert.That(follow, Is.Not.Null, $"{id} must follow the vehicle");
+                Assert.That(follow.TrackerSettings.PositionDamping, Is.EqualTo(Vector3.zero),
+                    $"{id} must not trail a timeline seek");
+            }
+
+            var onboard = anchors.Camera(CameraDirector.Onboard);
+            Assert.That(onboard.GetComponent<CinemachineHardLockToTarget>(), Is.Not.Null,
+                "onboard must be mounted on the vehicle");
+            Assert.That(onboard.GetComponent<CinemachineHardLockToTarget>().Damping, Is.Zero,
+                "onboard must not trail a timeline seek");
+            Assert.That(onboard.GetComponent<CinemachineCamera>().Follow,
+                Is.Not.EqualTo(anchors.vehicleRoot), "onboard needs its own vehicle mount");
+
+            var onboardCamera = onboard.GetComponent<CinemachineCamera>();
+            Assert.That(Mathf.Abs(onboardCamera.Follow.localPosition.x), Is.GreaterThan(0.5f),
+                "onboard needs a side-boom mount outside the vehicle geometry");
+            Assert.That(onboardCamera.LookAt.localPosition.y,
+                Is.LessThan(onboardCamera.Follow.localPosition.y),
+                "onboard should look aft along the vehicle, not only into empty sky");
+
+            var groundZoom = anchors.Camera(CameraDirector.GroundTracking)
+                .GetComponent<GroundOpticalZoom>();
+            Assert.That(groundZoom, Is.Not.Null, "ground tracking needs a long-range optical zoom");
+        }
+
+        [Test]
+        public void GroundCameraUsesOpticalZoomBelowOneDegreeForDistantTracking()
+        {
+            var anchors = OpenAndFindAnchors();
+            var ground = anchors.Camera(CameraDirector.GroundTracking);
+
+            var opticalZoom = ground.GetComponent("GroundOpticalZoom");
+            Assert.That(opticalZoom, Is.Not.Null,
+                "ground tracking needs an explicit optical-zoom extension for distant vehicle framing");
+
+            var field = opticalZoom.GetType().GetField("FovRange");
+            Assert.That(field, Is.Not.Null, "optical zoom must expose its supported FOV range");
+            var range = (Vector2)field.GetValue(opticalZoom);
+            Assert.That(range.x, Is.LessThan(1f),
+                "range optics need a sub-degree FOV to keep the vehicle readable at altitude");
         }
 
         [Test]

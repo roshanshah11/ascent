@@ -1,9 +1,11 @@
 using System.Collections.Generic;
 using Ascent.Runtime.Presentation;
+using Unity.Cinemachine;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.HighDefinition;
 using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
 
@@ -85,8 +87,23 @@ namespace Ascent.Editor
             // --- One rendering camera with a Cinemachine brain + five vcams ---
             var reviewCam = new GameObject("ReviewCamera");
             reviewCam.AddComponent<Camera>();
-            reviewCam.AddComponent<Unity.Cinemachine.CinemachineBrain>();
+            var brain = reviewCam.AddComponent<CinemachineBrain>();
+            // Review shots are timeline presets, not an in-world camera operator.
+            // A cut keeps a seek from briefly showing a stale shot.
+            brain.DefaultBlend = new CinemachineBlendDefinition(
+                CinemachineBlendDefinition.Styles.Cut, 0f);
             anchors.reviewCamera = reviewCam.transform;
+
+            // Virtual cameras need explicit vehicle-mounted anchors for an
+            // actual onboard view; a static world camera cannot become onboard
+            // merely by aiming it at the vehicle.
+            // Onboard is the attitude/rocket-cam view. Mount on a side boom that
+            // stands outside the ~0.33 m body radius, near the top of the ~11.3 m
+            // stack, and look aft/down along the vehicle toward the nozzle plume and
+            // receding ground — not into empty sky. The hard lock keeps the shot
+            // rigidly vehicle-mounted so a timeline seek never leaves a stale frame.
+            var onboardMount = MakeCameraAnchor("OnboardCameraMount", vehicle, new Vector3(2.5f, 11.5f, 0f));
+            var onboardLookAt = MakeCameraAnchor("OnboardLookAt", vehicle, new Vector3(0f, 0.5f, 0f));
 
             var rig = new GameObject(CameraRigName).transform;
             anchors.cameraRig = rig;
@@ -95,15 +112,10 @@ namespace Ascent.Editor
             {
                 var camGo = new GameObject($"Vcam_{id}");
                 camGo.transform.SetParent(rig, false);
-                var vcam = camGo.AddComponent<Unity.Cinemachine.CinemachineCamera>();
+                var vcam = camGo.AddComponent<CinemachineCamera>();
                 // Pad establishes scale first; it starts as the live shot.
                 vcam.Priority = id == CameraDirector.Pad ? CameraRig.ActivePriority : CameraRig.IdlePriority;
-                // Tracking shots follow the vehicle; pad and inspection are static.
-                if (id == CameraDirector.Chase || id == CameraDirector.Onboard || id == CameraDirector.GroundTracking)
-                {
-                    vcam.Follow = vehicle;
-                    vcam.LookAt = vehicle;
-                }
+                ConfigureCameraShot(id, vcam, vehicle, onboardMount, onboardLookAt);
                 PlaceCamera(id, camGo.transform);
                 anchors.cameras.Add(new SceneAnchors.NamedTransform { id = id, transform = camGo.transform });
                 cameraRigComp.vcams.Add(new SceneAnchors.NamedTransform { id = id, transform = camGo.transform });
@@ -125,12 +137,22 @@ namespace Ascent.Editor
             var sunGo = new GameObject("Sun");
             var sun = sunGo.AddComponent<Light>();
             sun.type = LightType.Directional;
-            sun.intensity = 1.1f;
+            sun.color = new Color(1.0f, 0.96f, 0.9f);
+            sun.shadows = LightShadows.Soft;
             sunGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+            // HDRP uses physical light units: a directional "sun" is set in lux, and
+            // clear-midday sun is ~110k lux. The old 1.1 value was moonlight, which
+            // is why the packaged frame rendered near-black. The HD data component
+            // also lets the Physically Based Sky treat this light as the sun disc.
+            var hdSun = sunGo.GetComponent<HDAdditionalLightData>()
+                        ?? sunGo.AddComponent<HDAdditionalLightData>();
+            hdSun.SetIntensity(110000f, LightUnit.Lux);
+            hdSun.interactsWithSky = true;
 
-            // Global volume: an empty profile lets the HDRP pipeline defaults
-            // (sky, exposure, tonemapping) drive the look; overrides are authored
-            // interactively on top of this anchor.
+            // Global volume: a Physically Based Sky (physical units, matches the lux
+            // sun) with automatic exposure so the sunlit gypsum reads at a natural
+            // mid-tone. Authored here so the packaged player looks like daylight
+            // without any interactive scene work.
             var volumeGo = new GameObject("GlobalVolume");
             var volume = volumeGo.AddComponent<Volume>();
             volume.isGlobal = true;
@@ -138,7 +160,25 @@ namespace Ascent.Editor
             var profile = ScriptableObject.CreateInstance<VolumeProfile>();
             System.IO.Directory.CreateDirectory("Assets/Ascent/Rendering");
             AssetDatabase.CreateAsset(profile, "Assets/Ascent/Rendering/GlobalVolume.asset");
+
+            var visualEnv = profile.Add<VisualEnvironment>(true);
+            visualEnv.skyType.overrideState = true;
+            visualEnv.skyType.value = SkySettings.GetUniqueID(typeof(PhysicallyBasedSky));
+            visualEnv.skyAmbientMode.overrideState = true;
+            visualEnv.skyAmbientMode.value = SkyAmbientMode.Dynamic;
+
+            var sky = profile.Add<PhysicallyBasedSky>(true);
+            sky.type.overrideState = true;
+            sky.type.value = PhysicallyBasedSkyModel.EarthSimple;
+
+            var exposure = profile.Add<Exposure>(true);
+            exposure.mode.overrideState = true;
+            exposure.mode.value = ExposureMode.Automatic;
+            exposure.compensation.overrideState = true;
+            exposure.compensation.value = 0.4f;
+
             volume.sharedProfile = profile;
+            AssetDatabase.SaveAssets();
 
             // --- Review shell: live UIDocument mounting the authored workbench ---
             var workbenchGo = new GameObject("ReviewWorkbench");
@@ -160,6 +200,15 @@ namespace Ascent.Editor
             bootstrap.anchors = anchors;
             bootstrap.hud = hud;
             bootstrap.plume = plumeGo.GetComponent<PlumeController>();
+
+            // Engineering overlays: draws the trajectory, event markers, velocity
+            // vector, body axes, attitude, and stage state from the accepted trace
+            // into the per-layer host objects. The bootstrap initializes it on Ready
+            // and toggles visibility via the workbench layer set (C = clean view).
+            var layers = workbenchGo.AddComponent<EngineeringLayersView>();
+            layers.anchors = anchors;
+            layers.overlayMaterialTemplate = booster.GetComponentInChildren<Renderer>()?.sharedMaterial;
+            bootstrap.layers = layers;
 
             anchors.reviewShell = workbenchGo.transform;
 
@@ -200,8 +249,21 @@ namespace Ascent.Editor
             if (col != null)
                 Object.DestroyImmediate(col);
 
-            // Metallic airframe tone so the vehicle reads under HDRP lighting.
-            AssignHdrpMaterial(body, $"{name}_Mat", new Color(0.55f, 0.57f, 0.60f), metallic: 0.85f, smoothness: 0.55f);
+            // Light brushed-metal airframe. Near-pure metal (0.85) took almost all of
+            // its response from environment reflection, and with only a dynamic sky
+            // (no reflection probes) it collapsed to a flat black silhouette against
+            // the bright gypsum. Low metallic + a bright base reads as a clearly lit
+            // diffuse airframe under the directional sun.
+            var material = AssignHdrpMaterial(
+                body, $"{name}_Mat", new Color(0.78f, 0.80f, 0.83f), metallic: 0.2f, smoothness: 0.35f);
+            if (material != null)
+            {
+                // The review camera sees the shaded side of the vehicle at liftoff.
+                // A restrained emission term retains its structure without making it
+                // read as a light source under automatic exposure.
+                HDMaterial.SetEmissiveColor(material, new Color(0.16f, 0.18f, 0.22f));
+                HDMaterial.ValidateMaterial(material);
+            }
 
             return stage;
         }
@@ -241,7 +303,30 @@ namespace Ascent.Editor
             emissionModule.enabled = true;
             ps.Stop(true, ParticleSystemStopBehavior.StopEmitting);
 
-            go.AddComponent<PlumeController>();
+            // The default particle material is a built-in pipeline shader and
+            // renders as hard billboard squares in an HDRP player. Keep the
+            // particle component for the trace binding contract, but render the
+            // packaged review plume as a small scene-authored HDRP mesh instead.
+            var particleRenderer = go.GetComponent<ParticleSystemRenderer>();
+            if (particleRenderer != null)
+                particleRenderer.enabled = false;
+
+            var core = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            core.name = "PlumeCore";
+            var coreCollider = core.GetComponent<Collider>();
+            if (coreCollider != null)
+                Object.DestroyImmediate(coreCollider);
+            core.transform.SetParent(go.transform, false);
+            core.transform.localPosition = new Vector3(0f, 0f, 1.8f);
+            core.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            core.transform.localScale = new Vector3(0.44f, 1.45f, 0.44f);
+            var coreMaterial = AssignHdrpMaterial(core, "PlumeCoreMat", new Color(1f, 0.22f, 0.025f), 0f, 0.15f);
+            if (coreMaterial != null && coreMaterial.HasProperty("_EmissiveColor"))
+                coreMaterial.SetColor("_EmissiveColor", new Color(1f, 0.10f, 0.01f) * 2f);
+
+            var controller = go.AddComponent<PlumeController>();
+            controller.plumeCore = core.GetComponent<Renderer>();
+            controller.plumeCore.enabled = false;
             return go;
         }
 
@@ -324,23 +409,25 @@ namespace Ascent.Editor
         /// silently to whatever shader the renderer already has if the HDRP shader
         /// cannot be resolved (e.g. a built-in fallback session).
         /// </summary>
-        private static void AssignHdrpMaterial(
+        private static Material AssignHdrpMaterial(
             GameObject go, string assetName, Color baseColor, float metallic = 0f, float smoothness = 0.4f)
         {
             var shader = Shader.Find("HDRP/Lit");
             if (shader == null)
-                return;
+                return null;
             var mat = new Material(shader) { name = assetName };
             mat.SetColor("_BaseColor", baseColor);
             if (mat.HasProperty("_Metallic"))
                 mat.SetFloat("_Metallic", metallic);
             if (mat.HasProperty("_Smoothness"))
                 mat.SetFloat("_Smoothness", smoothness);
+            HDMaterial.ValidateMaterial(mat);
             System.IO.Directory.CreateDirectory("Assets/Ascent/Rendering/Materials");
             AssetDatabase.CreateAsset(mat, $"Assets/Ascent/Rendering/Materials/{assetName}.mat");
             var renderer = go.GetComponent<Renderer>();
             if (renderer != null)
                 renderer.sharedMaterial = mat;
+            return mat;
         }
 
         /// <summary>
@@ -354,15 +441,30 @@ namespace Ascent.Editor
             const string path = "Assets/Ascent/UI/AscentPanelSettings.asset";
             var existing = AssetDatabase.LoadAssetAtPath<PanelSettings>(path);
             if (existing != null)
+            {
+                ConfigurePanelForReview(existing);
                 return existing;
+            }
 
             var settings = ScriptableObject.CreateInstance<PanelSettings>();
+            ConfigurePanelForReview(settings);
             var theme = EnsureRuntimeTheme();
             if (theme != null)
                 settings.themeStyleSheet = theme;
             System.IO.Directory.CreateDirectory("Assets/Ascent/UI");
             AssetDatabase.CreateAsset(settings, path);
             return settings;
+        }
+
+        private static void ConfigurePanelForReview(PanelSettings settings)
+        {
+            // Constant Physical Size turns a compact 1920x1080 HUD into a
+            // three-times-larger overlay on Retina macOS players. The review is a
+            // desktop workbench, so size it against the actual acceptance target.
+            settings.scaleMode = PanelScaleMode.ScaleWithScreenSize;
+            settings.referenceResolution = new Vector2Int(1920, 1080);
+            settings.match = 0.5f;
+            EditorUtility.SetDirty(settings);
         }
 
         /// <summary>
@@ -397,7 +499,7 @@ namespace Ascent.Editor
             switch (id)
             {
                 case CameraDirector.Pad:
-                    t.localPosition = new Vector3(0f, 3f, -20f);
+                    t.localPosition = new Vector3(0f, 5f, -60f);
                     t.localRotation = Quaternion.Euler(5f, 0f, 0f);
                     break;
                 case CameraDirector.Chase:
@@ -416,6 +518,83 @@ namespace Ascent.Editor
                     t.localRotation = Quaternion.Euler(20f, -45f, 0f);
                     break;
             }
+        }
+
+        private static Transform MakeCameraAnchor(string name, Transform parent, Vector3 localPosition)
+        {
+            var anchor = new GameObject(name).transform;
+            anchor.SetParent(parent, false);
+            anchor.localPosition = localPosition;
+            return anchor;
+        }
+
+        private static void ConfigureCameraShot(
+            string id, CinemachineCamera vcam, Transform vehicle, Transform onboardMount, Transform onboardLookAt)
+        {
+            switch (id)
+            {
+                case CameraDirector.Pad:
+                    // The physical camera stays at the pad, but it pans with the
+                    // launch vehicle so an airborne frame is still legible.
+                    vcam.Lens.FieldOfView = 35f;
+                    vcam.LookAt = vehicle;
+                    AddInstantAim(vcam);
+                    break;
+
+                case CameraDirector.Chase:
+                    vcam.Lens.FieldOfView = 40f;
+                    vcam.Follow = vehicle;
+                    vcam.LookAt = vehicle;
+                    AddInstantFollow(vcam, new Vector3(0f, 8f, -30f));
+                    AddInstantAim(vcam);
+                    break;
+
+                case CameraDirector.Onboard:
+                    vcam.Lens.FieldOfView = 70f;
+                    vcam.Follow = onboardMount;
+                    vcam.LookAt = onboardLookAt;
+                    vcam.gameObject.AddComponent<CinemachineHardLockToTarget>().Damping = 0f;
+                    AddInstantAim(vcam);
+                    break;
+
+                case CameraDirector.GroundTracking:
+                    vcam.Lens.FieldOfView = 8f;
+                    vcam.LookAt = vehicle;
+                    AddInstantAim(vcam);
+                    vcam.gameObject.AddComponent<GroundOpticalZoom>();
+                    break;
+
+                case CameraDirector.Inspection:
+                    vcam.Lens.FieldOfView = 32f;
+                    vcam.Follow = vehicle;
+                    vcam.LookAt = vehicle;
+                    AddInstantFollow(vcam, new Vector3(12f, 10f, -40f));
+                    AddInstantAim(vcam);
+                    break;
+
+                default:
+                    vcam.Lens.FieldOfView = 40f;
+                    break;
+            }
+        }
+
+        private static void AddInstantFollow(CinemachineCamera vcam, Vector3 offset)
+        {
+            var follow = vcam.gameObject.AddComponent<CinemachineFollow>();
+            follow.FollowOffset = offset;
+            var settings = follow.TrackerSettings;
+            settings.BindingMode = Unity.Cinemachine.TargetTracking.BindingMode.WorldSpace;
+            settings.PositionDamping = Vector3.zero;
+            settings.RotationDamping = Vector3.zero;
+            settings.QuaternionDamping = 0f;
+            follow.TrackerSettings = settings;
+        }
+
+        private static void AddInstantAim(CinemachineCamera vcam)
+        {
+            var composer = vcam.gameObject.AddComponent<CinemachineRotationComposer>();
+            composer.Composition.DeadZone.Enabled = false;
+            composer.Damping = Vector2.zero;
         }
     }
 }

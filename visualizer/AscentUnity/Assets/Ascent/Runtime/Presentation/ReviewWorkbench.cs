@@ -68,10 +68,15 @@ namespace Ascent.Runtime.Presentation
         public int VisibleEngineeringLayerCount => _visible.Count;
         public bool CleanView => _cleanView;
 
+        /// <summary>Monotonic counter bumped whenever the visible-layer set changes,
+        /// so a scene view can re-apply visibility only on change rather than every frame.</summary>
+        public int LayerRevision { get; private set; }
+
         public void ToggleLayer(string id)
         {
             if (!_visible.Remove(id))
                 _visible.Add(id);
+            LayerRevision++;
         }
 
         public void SetCleanView(bool on)
@@ -90,6 +95,7 @@ namespace Ascent.Runtime.Presentation
                     _visible.Add(id);
             }
             _cleanView = on;
+            LayerRevision++;
         }
 
         /// <summary>Seek exactly to a named event's Rust time; false if absent.</summary>

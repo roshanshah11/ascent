@@ -32,6 +32,10 @@ namespace Ascent.Runtime.Bridge
     /// </summary>
     public sealed class BridgeProcess : IDisposable
     {
+        // BRIDGE-DIAG (removable): flips on the launch/frame/exit tracing used to
+        // diagnose the packaged bridge-timeout. Set false to silence.
+        private const bool Diag = true;
+
         private readonly string _executablePath;
         private readonly int _maxRestarts;
         private readonly ConcurrentQueue<BridgeMessage> _inbound = new ConcurrentQueue<BridgeMessage>();
@@ -93,6 +97,14 @@ namespace Ascent.Runtime.Bridge
             var proc = new Process { StartInfo = psi, EnableRaisingEvents = false };
             proc.Start();
 
+            // BRIDGE-DIAG (removable): record exactly what was launched.
+            if (Diag)
+            {
+                int pid = -1;
+                try { pid = proc.Id; } catch { }
+                UnityEngine.Debug.Log($"BRIDGE-DIAG launch: exe=\"{_executablePath}\" args=\"{psi.Arguments}\" pid={pid}");
+            }
+
             var cts = new CancellationTokenSource();
             var stdout = proc.StandardOutput.BaseStream;
             var stderr = proc.StandardError.BaseStream;
@@ -113,6 +125,9 @@ namespace Ascent.Runtime.Bridge
         {
             var decoder = new FrameDecoder(Protocol.MaxFrameBytes);
             var buffer = new byte[8192];
+            long totalBytes = 0;   // BRIDGE-DIAG
+            int frameCount = 0;    // BRIDGE-DIAG
+            bool firstRead = true; // BRIDGE-DIAG
             try
             {
                 while (!token.IsCancellationRequested)
@@ -120,14 +135,43 @@ namespace Ascent.Runtime.Bridge
                     int n = stdout.Read(buffer, 0, buffer.Length);
                     if (n <= 0)
                         break;
+                    // BRIDGE-DIAG (removable): show the head of the very first read as
+                    // hex — a valid stream starts with a 4-byte little-endian length,
+                    // whereas stray stdout text would show up as ASCII here.
+                    if (Diag && firstRead)
+                    {
+                        firstRead = false;
+                        UnityEngine.Debug.Log($"BRIDGE-DIAG first stdout read: {n} bytes, head={HexHead(buffer, n, 48)}");
+                    }
+                    totalBytes += n;
                     var span = new ReadOnlySpan<byte>(buffer, 0, n);
                     foreach (var env in decoder.Push(span))
+                    {
                         _inbound.Enqueue(new BridgeMessage(generation, env));
+                        if (Diag)
+                        {
+                            frameCount++;
+                            UnityEngine.Debug.Log($"BRIDGE-DIAG frame #{frameCount}: kind=\"{env.Kind}\" pv={env.ProtocolVersion}");
+                        }
+                    }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Fall through to exit handling below.
+                // A decode/read failure otherwise looks identical to a silently
+                // stalled child, so surface it rather than swallowing it.
+                if (!token.IsCancellationRequested && !_disposed)
+                    UnityEngine.Debug.LogError($"BridgeProcess: frame reader failed (gen {generation}): {ex}");
+            }
+
+            // BRIDGE-DIAG (removable): the reader loop only ends on EOF, cancel, or
+            // throw — record why, plus the child's exit code if it has exited.
+            if (Diag)
+            {
+                string exit = "still-running";
+                try { if (_process != null && _process.HasExited) exit = _process.ExitCode.ToString(); }
+                catch { exit = "unknown"; }
+                UnityEngine.Debug.Log($"BRIDGE-DIAG reader ended (gen {generation}): totalBytes={totalBytes} frames={frameCount} poisoned={decoder.IsPoisoned} cancelled={token.IsCancellationRequested} childExit={exit}");
             }
 
             if (token.IsCancellationRequested || _disposed)
@@ -137,14 +181,36 @@ namespace Ascent.Runtime.Bridge
             TryRestart(generation);
         }
 
+        // BRIDGE-DIAG (removable): hex + ASCII of the first bytes off stdout.
+        private static string HexHead(byte[] buffer, int n, int max)
+        {
+            int count = System.Math.Min(n, max);
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < count; i++)
+                sb.Append(buffer[i].ToString("x2")).Append(' ');
+            sb.Append("| ");
+            for (int i = 0; i < count; i++)
+            {
+                byte b = buffer[i];
+                sb.Append(b >= 0x20 && b < 0x7f ? (char)b : '.');
+            }
+            return sb.ToString();
+        }
+
         private static void DrainStderr(Stream stderr, CancellationToken token)
         {
             var buffer = new byte[4096];
             try
             {
-                while (!token.IsCancellationRequested && stderr.Read(buffer, 0, buffer.Length) > 0)
+                int n;
+                while (!token.IsCancellationRequested && (n = stderr.Read(buffer, 0, buffer.Length)) > 0)
                 {
-                    // Diagnostic only; never parsed as protocol.
+                    // Never parsed as protocol, but the child writes its own launch
+                    // and mission errors here — surface them so a bridge that fails
+                    // to produce a trace is not mistaken for a stalled child.
+                    var text = System.Text.Encoding.UTF8.GetString(buffer, 0, n).TrimEnd();
+                    if (text.Length > 0)
+                        UnityEngine.Debug.LogWarning($"[bridge stderr] {text}");
                 }
             }
             catch (Exception)

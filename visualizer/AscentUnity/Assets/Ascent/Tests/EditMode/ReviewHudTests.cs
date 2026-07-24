@@ -136,5 +136,106 @@ namespace Ascent.Tests.EditMode
             Assert.That(root.Q<Label>("rate").text, Is.EqualTo("1x"));
             StringAssert.Contains("Paused", root.Q<Label>("status").text);
         }
+
+        [Test]
+        public void CameraListHasOneChipPerCameraId()
+        {
+            var wb = NewWorkbench();
+            var list = new VisualElement();
+
+            int made = ReviewHud.PopulateCameraList(list, wb, null);
+
+            Assert.That(made, Is.EqualTo(CameraDirector.Ids.Count));
+            foreach (var id in CameraDirector.Ids)
+                Assert.That(list.Q<Button>($"camera-{id}"), Is.Not.Null, $"missing camera chip '{id}'");
+        }
+
+        [Test]
+        public void ClickingACameraChipSwitchesTheActiveCamera()
+        {
+            var wb = NewWorkbench();
+            var list = new VisualElement();
+            ReviewHud.PopulateCameraList(list, wb, null);
+
+            // A synthetic ClickEvent cannot drive Button.clicked without a live panel,
+            // so exercise the exact action a chip runs on click (the production lambda
+            // calls this) and confirm a chip for that id exists to run it.
+            Assert.That(list.Q<Button>($"camera-{CameraDirector.Chase}"), Is.Not.Null);
+            ReviewHud.ActivateCameraChip(wb, CameraDirector.Chase, null);
+
+            Assert.That(wb.Cameras.ActiveId, Is.EqualTo(CameraDirector.Chase));
+        }
+
+        [Test]
+        public void SyncActiveCameraMarksExactlyOneChipActive()
+        {
+            var vta = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(UxmlPath);
+            var root = new VisualElement();
+            vta.CloneTree(root);
+            var wb = NewWorkbench();
+            ReviewHud.PopulateCameraList(root.Q<VisualElement>("camera-list"), wb, null);
+            wb.Cameras.SwitchTo(CameraDirector.Onboard);
+
+            ReviewHud.SyncActiveCamera(root, wb);
+
+            var active = root.Query<Button>(className: "camera-button").ToList()
+                .FindAll(b => b.ClassListContains("active"));
+            Assert.That(active.Count, Is.EqualTo(1));
+            Assert.That(active[0].name, Is.EqualTo($"camera-{CameraDirector.Onboard}"));
+            StringAssert.Contains("Onboard", root.Q<Label>("active-camera").text);
+        }
+
+        [Test]
+        public void CameraChangeRefreshesTheTopStatusCameraId()
+        {
+            var vta = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(UxmlPath);
+            var root = new VisualElement();
+            vta.CloneTree(root);
+            var wb = NewWorkbench();
+            var host = new UnityEngine.GameObject("review-hud-test");
+            var hud = host.AddComponent<ReviewHud>();
+
+            try
+            {
+                hud.Bind(root, wb);
+                wb.Cameras.SwitchTo(CameraDirector.Chase);
+
+                StringAssert.Contains("cam chase", root.Q<Label>("status").text);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(host);
+            }
+        }
+
+        [Test]
+        public void StateReadoutsMirrorTheTraceGradedRows()
+        {
+            var trace = BuildTrace(TwoEvents());
+            var host = new VisualElement();
+
+            int rows = ReviewHud.RenderStateReadouts(host, trace, 1.0);
+
+            int expected = FlightReadout.StateAt(trace, 1.0).Count;
+            Assert.That(rows, Is.EqualTo(expected));
+            Assert.That(host.Query<VisualElement>(className: "state-row").ToList().Count, Is.EqualTo(expected));
+            // Every row carries exactly one provenance chip, none of them unspecified.
+            Assert.That(host.Query<VisualElement>(className: "prov-chip").ToList().Count, Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void EvidenceDrawerShowsTheAcceptedHashAndCounts()
+        {
+            var trace = BuildTrace(TwoEvents());
+            var host = new VisualElement();
+
+            int rows = ReviewHud.RenderEvidence(host, trace);
+
+            Assert.That(rows, Is.EqualTo(4));
+            Assert.That(host.Q<VisualElement>("evidence-validation"), Is.Not.Null);
+            var hashRow = host.Q<VisualElement>("evidence-trace-sha-256");
+            Assert.That(hashRow, Is.Not.Null, "evidence must show the trace hash");
+            StringAssert.Contains(trace.TraceHash.Substring(0, 16), hashRow.Q<Label>(className: "evidence-val").text);
+        }
     }
 }

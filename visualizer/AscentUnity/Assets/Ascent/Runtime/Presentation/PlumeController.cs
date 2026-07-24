@@ -24,6 +24,9 @@ namespace Ascent.Runtime.Presentation
         [Tooltip("Particle start speed (m/s) at full burn.")]
         public float maxStartSpeed = 45f;
 
+        [Tooltip("HDRP-safe mesh plume toggled from the same trace-derived powered state.")]
+        public Renderer plumeCore;
+
         private ParticleSystem _system;
 
         private void Awake() => _system = GetComponent<ParticleSystem>();
@@ -34,6 +37,8 @@ namespace Ascent.Runtime.Presentation
             if (_system == null)
                 _system = GetComponent<ParticleSystem>();
             bool powered = IsPoweredAt(events, t);
+            if (plumeCore != null)
+                plumeCore.enabled = powered;
             var emission = _system.emission;
             emission.rateOverTime = EmissionRate(powered, maxEmissionRate);
             var main = _system.main;

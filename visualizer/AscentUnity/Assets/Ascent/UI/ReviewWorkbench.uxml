@@ -1,10 +1,11 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
     <!--
-      Review workbench layout: a compact top mission/status bar, a left layer
-      rail, a right state/evidence inspector, and a bottom semantic timeline.
-      Selecting a timeline marker seeks the exact Rust event time; every readout
-      carries units, validity, and evidence status. Wiring lives in the runtime
-      ReviewWorkbench controller.
+      Review workbench layout: the scene renders full-bleed behind the panel; a
+      slim mission/status bar floats at the top, compact engineering-layer and
+      camera rails float over the left edge, a State/Evidence inspector over the
+      right edge, and a transport + event scrubber over the bottom. Every readout
+      carries a unit and an evidence provenance. Wiring lives in ReviewHud +
+      ReviewBootstrap; nothing here holds flight state.
     -->
     <Style src="ReviewWorkbench.uss" />
     <ui:VisualElement name="root" class="ascent-root">
@@ -15,29 +16,39 @@
         </ui:VisualElement>
 
         <ui:VisualElement name="body" class="body">
+            <ui:VisualElement name="viewport" class="viewport" />
+
             <ui:VisualElement name="layer-rail" class="layer-rail">
-                <ui:Label text="Engineering layers" class="rail-title" />
+                <ui:Label text="ENGINEERING LAYERS" class="rail-title" />
                 <ui:VisualElement name="layer-list" class="layer-list" />
                 <ui:Toggle name="clean-view" label="Clean view (C)" class="clean-view" />
             </ui:VisualElement>
 
-            <ui:VisualElement name="viewport" class="viewport" />
+            <ui:VisualElement name="camera-rail" class="camera-rail">
+                <ui:Label text="CAMERAS (1–5)" class="rail-title" />
+                <ui:VisualElement name="camera-list" class="camera-list" />
+                <ui:Label name="active-camera" text="active: pad" class="active-camera" />
+            </ui:VisualElement>
 
             <ui:VisualElement name="inspector" class="inspector">
-                <ui:Label text="State" class="inspector-title" />
+                <ui:Label text="STATE" class="inspector-title" />
                 <ui:VisualElement name="state-readouts" class="state-readouts" />
-                <ui:Label text="Evidence" class="inspector-title" />
+                <ui:Label text="EVIDENCE" class="inspector-title" />
                 <ui:VisualElement name="evidence-drawer" class="evidence-drawer" />
             </ui:VisualElement>
         </ui:VisualElement>
 
         <ui:VisualElement name="timeline" class="timeline">
             <ui:VisualElement name="transport" class="transport">
-                <ui:Button name="play-pause" text="Play/Pause (Space)" class="transport-button" />
+                <ui:Button name="play-pause" text="Play / Pause" class="transport-button" />
                 <ui:Label name="clock" text="t = 0.000 s" class="clock" />
                 <ui:Label name="rate" text="1x" class="rate" />
             </ui:VisualElement>
-            <ui:VisualElement name="event-track" class="event-track" />
+            <ui:VisualElement name="scrubber" class="scrubber">
+                <ui:VisualElement name="scrubber-track" class="scrubber-track" />
+                <ui:VisualElement name="scrubber-fill" class="scrubber-fill" />
+                <ui:VisualElement name="event-track" class="event-track" />
+            </ui:VisualElement>
         </ui:VisualElement>
 
         <ui:VisualElement name="notice" class="notice" />

@@ -1,85 +1,246 @@
-/* Review workbench styling — a restrained engineering shell, not a game HUD.
-   Neutral dark surfaces, clear hierarchy, legible at 1920x1080. */
+/* Review workbench styling — a restrained engineering instrument surface, not a
+   game HUD. The scene renders full-bleed behind the panel; the root and the
+   viewport are transparent so the White Sands terrain, vehicle, and plume are
+   the primary subject. Edge panels float over the scene as compact graphite
+   cards, keeping at least ~70% of a 1920x1080 frame as live viewport.
+
+   Palette: cyan = accepted trace truth / current selection; amber = caveats and
+   approximations; red = failure. Never black-on-dark, never default Unity chrome. */
 
 .ascent-root {
     flex-grow: 1;
     flex-direction: column;
-    background-color: rgb(18, 20, 24);
+    /* Transparent: the HDRP camera shows through. This is the fix for the
+       black/empty viewport — the root must never paint over the scene. */
+    background-color: rgba(0, 0, 0, 0);
     color: rgb(226, 230, 236);
     font-size: 13px;
 }
 
+/* --- Top mission/status bar: a slim floating strip. --------------------- */
 .top-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
     flex-direction: row;
     align-items: center;
-    height: 34px;
-    padding-left: 12px;
-    padding-right: 12px;
-    background-color: rgb(26, 29, 35);
+    height: 30px;
+    padding-left: 14px;
+    padding-right: 14px;
+    background-color: rgba(16, 18, 22, 0.86);
     border-bottom-width: 1px;
-    border-bottom-color: rgb(44, 48, 56);
+    border-bottom-color: rgba(64, 130, 150, 0.35);
 }
 
-.mission-name { -unity-font-style: bold; flex-grow: 1; }
-.status { color: rgb(150, 200, 255); margin-right: 16px; }
-.trace-hash { color: rgb(140, 146, 156); -unity-font-style: italic; }
+.mission-name { -unity-font-style: bold; flex-grow: 1; letter-spacing: 0.5px; }
+.status { color: rgb(120, 210, 235); margin-right: 16px; -unity-font-style: bold; }
+.trace-hash { color: rgb(150, 156, 166); -unity-font-style: italic; }
 
-.body { flex-direction: row; flex-grow: 1; }
+/* --- Body is the full-bleed scene; rail + inspector float over its edges. */
+.body { flex-grow: 1; }
+
+.viewport {
+    flex-grow: 1;
+    /* A hole cut through the UI so the scene is visible and interactive-looking. */
+    background-color: rgba(0, 0, 0, 0);
+}
 
 .layer-rail {
-    width: 240px;
-    padding: 10px;
-    background-color: rgb(22, 25, 30);
-    border-right-width: 1px;
-    border-right-color: rgb(44, 48, 56);
+    position: absolute;
+    left: 12px;
+    top: 42px;
+    width: 194px;
+    padding: 10px 10px 8px 10px;
+    background-color: rgba(18, 21, 26, 0.82);
+    border-width: 1px;
+    border-color: rgba(70, 78, 90, 0.55);
+    border-radius: 6px;
 }
 
 .rail-title, .inspector-title {
     -unity-font-style: bold;
-    color: rgb(180, 186, 196);
+    color: rgb(120, 210, 235);
+    font-size: 11px;
     margin-bottom: 6px;
-    margin-top: 6px;
+    margin-top: 4px;
+    letter-spacing: 0.6px;
 }
 
-.layer-list { flex-grow: 1; }
-.clean-view { margin-top: 8px; }
+.layer-list { margin-bottom: 4px; }
 
-.viewport { flex-grow: 1; background-color: rgb(10, 11, 14); }
-
-.inspector {
-    width: 300px;
+/* Camera control row: compact selectable chips with an active-camera readout. */
+.camera-rail {
+    position: absolute;
+    left: 12px;
+    top: 300px;
+    width: 194px;
     padding: 10px;
-    background-color: rgb(22, 25, 30);
-    border-left-width: 1px;
-    border-left-color: rgb(44, 48, 56);
+    background-color: rgba(18, 21, 26, 0.82);
+    border-width: 1px;
+    border-color: rgba(70, 78, 90, 0.55);
+    border-radius: 6px;
 }
 
-.state-readouts, .evidence-drawer { margin-bottom: 10px; }
+.camera-list { flex-direction: column; }
 
-.timeline {
-    height: 96px;
-    background-color: rgb(26, 29, 35);
-    border-top-width: 1px;
-    border-top-color: rgb(44, 48, 56);
-    padding: 8px 12px;
+.camera-button {
+    height: 22px;
+    margin: 2px 0;
+    padding-left: 8px;
+    -unity-text-align: middle-left;
+    background-color: rgba(30, 35, 42, 0.9);
+    border-width: 1px;
+    border-color: rgba(70, 78, 90, 0.6);
+    border-radius: 4px;
+    color: rgb(210, 216, 224);
+}
+.camera-button:hover { border-color: rgb(120, 210, 235); }
+.camera-button.active {
+    background-color: rgba(24, 70, 84, 0.95);
+    border-color: rgb(120, 210, 235);
+    color: rgb(180, 236, 250);
+    -unity-font-style: bold;
 }
 
-.transport { flex-direction: row; align-items: center; margin-bottom: 6px; }
-.transport-button { height: 24px; }
-.clock { margin-left: 16px; -unity-font-style: bold; }
-.rate { margin-left: 12px; color: rgb(150, 200, 255); }
+.active-camera { color: rgb(120, 210, 235); margin-top: 6px; font-size: 11px; }
 
-.event-track {
-    flex-grow: 1;
+/* Engineering-layer toggles: no default Unity checkbox chrome. */
+.ascent-root Toggle {
+    margin: 1px 0;
+    font-size: 12px;
+}
+.ascent-root Toggle > VisualElement { flex-direction: row; align-items: center; }
+.ascent-root Toggle .unity-toggle__checkmark {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border-width: 1px;
+    border-color: rgba(90, 100, 112, 0.9);
+    background-color: rgba(20, 24, 30, 0.9);
+}
+.ascent-root Toggle:checked .unity-toggle__checkmark {
+    background-color: rgb(90, 200, 230);
+    border-color: rgb(120, 210, 235);
+}
+.ascent-root Toggle Label { color: rgb(214, 220, 228); }
+
+.clean-view { margin-top: 8px; -unity-font-style: bold; }
+
+/* --- Right inspector: State + Evidence, every value with unit + provenance. */
+.inspector {
+    position: absolute;
+    right: 12px;
+    top: 42px;
+    bottom: 78px;
+    width: 360px;
+    padding: 10px 12px;
+    background-color: rgba(18, 21, 26, 0.82);
+    border-width: 1px;
+    border-color: rgba(70, 78, 90, 0.55);
+    border-radius: 6px;
+}
+
+.state-readouts { margin-bottom: 12px; }
+.evidence-drawer { margin-bottom: 2px; }
+
+/* One state row: label · value · unit, with a provenance chip. */
+.state-row {
     flex-direction: row;
     align-items: center;
-    background-color: rgb(16, 18, 22);
-    border-radius: 3px;
+    justify-content: space-between;
+    height: 20px;
+}
+.state-label { color: rgb(160, 168, 178); width: 92px; flex-shrink: 0; }
+.state-value { -unity-font-style: bold; color: rgb(226, 232, 240); flex-grow: 1; -unity-text-align: middle-right; }
+.state-unit { color: rgb(150, 158, 168); width: 42px; -unity-text-align: middle-right; }
+
+.prov-chip {
+    width: 8px; height: 8px; border-radius: 4px; margin-left: 8px; flex-shrink: 0;
+}
+.prov-direct { background-color: rgb(90, 200, 230); }      /* cyan: straight from trace */
+.prov-derived { background-color: rgb(120, 170, 210); }    /* muted cyan: derived */
+.prov-approx { background-color: rgb(230, 180, 90); }      /* amber: approximation */
+
+.evidence-row { flex-direction: row; justify-content: space-between; height: 19px; }
+.evidence-key { color: rgb(160, 168, 178); }
+.evidence-val { color: rgb(214, 220, 228); -unity-font-style: bold; }
+.evidence-ok { color: rgb(120, 220, 170); -unity-font-style: bold; }
+.evidence-note { color: rgb(230, 180, 90); font-size: 11px; white-space: normal; margin-top: 4px; }
+
+/* --- Bottom transport + scrubber: a slim floating band. ----------------- */
+.timeline {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 66px;
+    background-color: rgba(16, 18, 22, 0.88);
+    border-top-width: 1px;
+    border-top-color: rgba(64, 130, 150, 0.35);
+    padding: 8px 14px;
 }
 
+.transport { flex-direction: row; align-items: center; margin-bottom: 8px; }
+.transport-button {
+    height: 22px;
+    padding: 0 12px;
+    background-color: rgba(24, 70, 84, 0.95);
+    border-width: 1px;
+    border-color: rgb(120, 210, 235);
+    border-radius: 4px;
+    color: rgb(180, 236, 250);
+    -unity-font-style: bold;
+}
+.transport-button:hover { background-color: rgba(30, 90, 106, 0.95); }
+.clock { margin-left: 16px; -unity-font-style: bold; color: rgb(226, 232, 240); }
+.rate { margin-left: 12px; color: rgb(120, 210, 235); }
+
+/* Scrubber: a thin track with a cyan progress fill and event markers pinned by
+   time. Replaces the old strip of giant generic buttons. */
+.scrubber {
+    height: 16px;
+    justify-content: center;
+}
+.scrubber-track {
+    position: absolute;
+    left: 0; right: 0;
+    height: 4px;
+    background-color: rgba(70, 80, 92, 0.8);
+    border-radius: 2px;
+}
+.scrubber-fill {
+    position: absolute;
+    left: 0;
+    height: 4px;
+    width: 0;
+    background-color: rgb(90, 200, 230);
+    border-radius: 2px;
+}
+.event-track {
+    position: absolute;
+    left: 0; right: 0; top: 0; bottom: 0;
+}
+.event-marker {
+    position: absolute;
+    top: 0;
+    height: 16px;
+    padding: 0 5px;
+    font-size: 10px;
+    background-color: rgba(24, 70, 84, 0.9);
+    border-width: 1px;
+    border-color: rgba(120, 210, 235, 0.7);
+    border-radius: 3px;
+    color: rgb(180, 236, 250);
+    translate: -50% 0;
+}
+.event-marker:hover { background-color: rgba(30, 90, 106, 0.95); border-color: rgb(150, 230, 250); }
+
 .notice {
+    position: absolute;
+    left: 14px;
+    bottom: 74px;
     min-height: 0;
-    padding-left: 12px;
-    padding-right: 12px;
-    color: rgb(255, 210, 140);
+    color: rgb(230, 180, 90);
+    -unity-font-style: bold;
 }
