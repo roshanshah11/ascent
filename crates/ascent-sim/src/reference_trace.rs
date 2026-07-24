@@ -10,11 +10,9 @@
 use ascent_domain::reference::ReferenceMission;
 use ascent_domain::vehicle::{Part, PartKind, Vehicle};
 
-use crate::rocket::{DragModel, Environment, Recovery};
-use crate::sim::SimConfig;
-use crate::sixdof::{
-    simulate_sixdof_staged, SixDofLaunch, SixDofResult, SixDofStage, SixDofVehicle, Wind3DProfile,
-};
+use crate::rocket::DragModel;
+use crate::run_session::MissionSnapshot;
+use crate::sixdof::{simulate_sixdof_staged, SixDofResult, SixDofStage, SixDofVehicle};
 
 /// Map a [`Vehicle`]'s part tree into a sequence of [`SixDofStage`]s, one per
 /// detected stage, using the bundled motor registry to resolve motor
@@ -209,18 +207,21 @@ fn walk_part(part: &Part, fore: f64, len: f64, items: &mut Vec<GeomItem>, r_max:
 /// The trace is a pure function of the mission's vehicle + evidence-bound motors:
 /// identical inputs always produce a [`SixDofResult`] with an identical
 /// `summary.input_hash` (the canonical-input SHA-256).
+///
+/// The fixed reference inputs (calm wind, vertical launch, default
+/// environment, the dt/max-time integration config, and the recovery canopy)
+/// live in exactly one place: [`MissionSnapshot::from_reference_mission`]. This
+/// batch path and the stepped [`crate::run_session::RunSession`] therefore run
+/// byte-identical inputs by construction. The flight reaches ~97 km apogee and
+/// descends under the canopy to a landing near t≈3900 s, well inside the cap.
 pub fn trace_reference_mission(mission: &ReferenceMission) -> Result<SixDofResult, String> {
-    let stages = mission_to_sixdof_stages(mission)?;
-    let wind = Wind3DProfile::calm();
-    let launch = SixDofLaunch::vertical();
-    let env = Environment::default();
-    // The reference flight reaches ~97 km apogee and descends under a large
-    // recovery canopy; landing occurs near t≈3900 s, so the cap sits well
-    // above it to guarantee a launch-to-landing trace.
-    let config = SimConfig {
-        dt_s: 0.02,
-        max_time_s: 6_000.0,
-    };
-    let recovery = Recovery::single(1.5, 40.0);
-    simulate_sixdof_staged(&stages, Some(recovery), &wind, &launch, &env, &config)
+    let snapshot = MissionSnapshot::from_reference_mission(mission)?;
+    simulate_sixdof_staged(
+        &snapshot.stages,
+        snapshot.recovery.clone(),
+        &snapshot.wind,
+        &snapshot.launch,
+        &snapshot.environment,
+        &snapshot.config,
+    )
 }

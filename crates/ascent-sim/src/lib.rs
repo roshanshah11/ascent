@@ -32,6 +32,7 @@ pub mod reference_trace;
 pub mod rocket;
 #[cfg(feature = "bridge-rocketpy")]
 pub mod rocketpy_bridge;
+pub mod run_session;
 pub mod sim;
 pub mod sixdof;
 pub mod summary;
@@ -54,6 +55,10 @@ pub use profile::{AtmosphereProfile, ProfileLayer};
 pub use rocket::{DragModel, Drogue, Environment, Recovery, Rocket};
 #[cfg(feature = "bridge-rocketpy")]
 pub use rocketpy_bridge::RocketPyEngine;
+pub use run_session::{
+    AdvanceOutcome, FlightEvent, MissionProvenance, MissionSnapshot, RunSession, SessionState,
+    SourceRef, SNAPSHOT_SCHEMA_VERSION,
+};
 pub use sim::{convergence_report, simulate_vertical, ConvergenceReport, SimConfig, SimResult};
 pub use sixdof::{
     simulate_sixdof_staged, FlightPhase, SixDofEngine, SixDofLaunch, SixDofResult, SixDofSample,

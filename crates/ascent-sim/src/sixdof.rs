@@ -449,10 +449,495 @@ pub struct SixDofStage {
     pub drag: Option<crate::rocket::DragModel>,
 }
 
+/// Outcome of one [`StagedStepper::step`] call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StepStatus {
+    /// The integrator advanced; the flight is still in progress.
+    Running,
+    /// The integrator reached a terminal condition (landing, the time cap, or
+    /// a motor that never lifts). No further stepping changes the result.
+    Finished,
+}
+
+/// Effective mass carried above stage `k` (everything not yet separated).
+fn carried_above(stages: &[SixDofStage], k: usize) -> f64 {
+    stages[k + 1..]
+        .iter()
+        .map(|s| s.dry_mass_kg + s.motor.mass_at(0.0))
+        .sum::<f64>()
+}
+
+/// The point-mass `Rocket` flown while stage `k` burns (its dry mass plus all
+/// mass carried above it).
+fn effective_rocket(
+    stages: &[SixDofStage],
+    recovery: &Option<crate::rocket::Recovery>,
+    k: usize,
+) -> Rocket {
+    Rocket {
+        name: String::new(),
+        dry_mass_kg: stages[k].dry_mass_kg + carried_above(stages, k),
+        drag: stages[k].drag.clone(),
+        recovery: recovery.clone(),
+    }
+}
+
+/// Re-entrant driver for a staged 6-DOF flight. This owns the exact
+/// integration state of the canonical `simulate_sixdof_staged` loop; one
+/// [`StagedStepper::step`] call executes one iteration of that loop, so a
+/// batch run and a stepped run share a single integrator and identical
+/// numerical ordering. `simulate_sixdof_staged` drives it to completion;
+/// `RunSession` drives it in fixed-count chunks.
+pub(crate) struct StagedStepper {
+    // Immutable inputs, owned so the stepper is self-contained across calls.
+    stages: Vec<SixDofStage>,
+    recovery: Option<crate::rocket::Recovery>,
+    wind: Wind3DProfile,
+    launch: SixDofLaunch,
+    env: Environment,
+    config: SimConfig,
+    // Immutable derived setup.
+    engines: Vec<SixDofEngine>,
+    last: usize,
+    dt: f64,
+    rail_axis: [f64; 3],
+    launch_attitude: [f64; 4],
+    // Mutable integration state (mirrors the canonical loop's locals).
+    active: usize,
+    rocket: Rocket,
+    state: State,
+    t: f64,
+    tau: f64, // active-stage motor clock
+    burnout_emitted: bool,
+    phase: FlightPhase,
+    history: Vec<SixDofSample>,
+    events: Vec<Event>,
+    steps: u64,
+    max_velocity: f64,
+    rail_exit_time: Option<f64>,
+    weathercock_pitch_deg: Option<f64>,
+    done: bool,
+}
+
+impl StagedStepper {
+    /// Validate inputs and prime the integration state (identical setup to the
+    /// canonical loop, including the initial history sample at t = 0).
+    pub(crate) fn new(
+        stages: &[SixDofStage],
+        recovery: Option<crate::rocket::Recovery>,
+        wind: &Wind3DProfile,
+        launch: &SixDofLaunch,
+        env: &Environment,
+        config: &SimConfig,
+    ) -> Result<Self, String> {
+        if stages.is_empty() {
+            return Err("at least one stage required".into());
+        }
+        let last = stages.len() - 1;
+
+        // Per-stage engines re-run the input validation on each vehicle.
+        let engines: Vec<SixDofEngine> = stages
+            .iter()
+            .map(|s| SixDofEngine::new(s.vehicle.clone(), wind.clone(), launch.clone()))
+            .collect::<Result<_, _>>()?;
+
+        let stages = stages.to_vec();
+        let rocket = effective_rocket(&stages, &recovery, 0);
+        validate_run_inputs(&rocket, env, config)?;
+
+        let dt = config.dt_s;
+        let rail_axis = launch_axis(launch);
+        let launch_attitude = launch_quaternion(launch);
+        let mut state = [0.0; STATE_LEN];
+        state[ATTITUDE..ATTITUDE + 4].copy_from_slice(&launch_attitude);
+        let phase = FlightPhase::Pad;
+        let history = vec![sample(0.0, state, phase)];
+
+        Ok(Self {
+            stages,
+            recovery,
+            wind: wind.clone(),
+            launch: launch.clone(),
+            env: env.clone(),
+            config: config.clone(),
+            engines,
+            last,
+            dt,
+            rail_axis,
+            launch_attitude,
+            active: 0,
+            rocket,
+            state,
+            t: 0.0,
+            tau: 0.0,
+            burnout_emitted: false,
+            phase,
+            history,
+            events: Vec::new(),
+            steps: 0,
+            max_velocity: 0.0,
+            rail_exit_time: None,
+            weathercock_pitch_deg: None,
+            done: false,
+        })
+    }
+
+    /// Execute exactly one iteration of the canonical staged loop. `Running`
+    /// mirrors the loop reaching the next iteration (whether by a full step, a
+    /// snapped event crossing, or a held-on-pad tick); `Finished` mirrors the
+    /// loop's `break`/guard exits. The body is a line-for-line move of the
+    /// canonical loop, with `continue` -> `Ok(Running)` and `break` ->
+    /// `self.done = true; Ok(Finished)`.
+    pub(crate) fn step(&mut self) -> Result<StepStatus, String> {
+        if self.done {
+            return Ok(StepStatus::Finished);
+        }
+        if self.t >= self.config.max_time_s {
+            self.done = true;
+            return Ok(StepStatus::Finished);
+        }
+
+        let dt = self.dt;
+        let burn_time = self.stages[self.active].motor.burn_time();
+
+        if self.phase == FlightPhase::Pad {
+            let motor = &self.stages[self.active].motor;
+            let mass_now = self.rocket.dry_mass_kg + motor.mass_at(self.tau);
+            let mass_next = self.rocket.dry_mass_kg + motor.mass_at(self.tau + dt);
+            let opposing_gravity = self.env.gravity_ms2 * self.rail_axis[2];
+            let held = motor.thrust_at(self.tau) <= mass_now * opposing_gravity
+                && motor.thrust_at(self.tau + dt) <= mass_next * opposing_gravity;
+            if held {
+                if self.tau >= burn_time {
+                    self.done = true;
+                    return Ok(StepStatus::Finished);
+                }
+                self.t += dt;
+                self.tau += dt;
+                self.steps += 1;
+                return Ok(StepStatus::Running);
+            }
+            self.events.push(Event {
+                kind: EventKind::Liftoff,
+                t: self.t,
+                altitude_m: 0.0,
+                velocity_ms: 0.0,
+            });
+            self.phase = FlightPhase::Rail;
+        }
+
+        let sep_local = burn_time + self.stages[self.active].separation_delay_s;
+        let step = if self.active < self.last && self.tau + dt > sep_local {
+            sep_local - self.tau
+        } else {
+            dt
+        };
+
+        if step > 1e-12 {
+            let mut next = {
+                let motor = &self.stages[self.active].motor;
+                let vehicle = &self.engines[self.active].vehicle;
+                rk4_step(
+                    self.tau,
+                    self.state,
+                    step,
+                    self.phase,
+                    &self.rocket,
+                    motor,
+                    &self.env,
+                    vehicle,
+                    &self.wind,
+                    self.rail_axis,
+                )?
+            };
+            normalize_state_quaternion(&mut next)?;
+
+            if self.phase == FlightPhase::Rail
+                && dot3(vector3(self.state, POSITION), self.rail_axis) <= 0.0
+                && dot3(vector3(self.state, VELOCITY), self.rail_axis) <= 0.0
+                && self.tau < burn_time
+            {
+                constrain_rail_state(&mut next, self.rail_axis, self.launch_attitude, true);
+            }
+
+            let from_rail_distance = dot3(vector3(self.state, POSITION), self.rail_axis);
+            let to_rail_distance = dot3(vector3(next, POSITION), self.rail_axis);
+            if self.phase == FlightPhase::Rail
+                && from_rail_distance > 0.0
+                && to_rail_distance <= 0.0
+            {
+                let frac =
+                    (from_rail_distance / (from_rail_distance - to_rail_distance)).clamp(0.0, 1.0);
+                self.state = interpolate_state(self.state, next, frac)?;
+                constrain_rail_state(&mut self.state, self.rail_axis, self.launch_attitude, true);
+                self.state[POSITION..POSITION + 3].fill(0.0);
+                self.state[VELOCITY..VELOCITY + 3].fill(0.0);
+                self.t += frac * step;
+                self.tau += frac * step;
+                self.phase = FlightPhase::Pad;
+                self.steps += 1;
+                self.history.push(sample(self.t, self.state, self.phase));
+                return Ok(StepStatus::Running);
+            }
+            if self.phase == FlightPhase::Rail
+                && from_rail_distance < self.env.rail_length_m
+                && to_rail_distance >= self.env.rail_length_m
+            {
+                let frac = ((self.env.rail_length_m - from_rail_distance)
+                    / (to_rail_distance - from_rail_distance))
+                    .clamp(0.0, 1.0);
+                let event =
+                    interpolated_event(EventKind::RailExit, self.t, step, self.state, next, frac);
+                self.rail_exit_time = Some(event.t);
+                self.events.push(event);
+                self.phase = FlightPhase::Ascent;
+            }
+
+            if !self.burnout_emitted && self.tau + step >= burn_time - 1e-9 {
+                let frac = if step > 0.0 {
+                    ((burn_time - self.tau) / step).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                self.events.push(interpolated_event(
+                    EventKind::Burnout,
+                    self.t,
+                    step,
+                    self.state,
+                    next,
+                    frac,
+                ));
+                self.burnout_emitted = true;
+            }
+
+            if self.active == self.last
+                && self.phase == FlightPhase::Ascent
+                && self.state[VELOCITY + 2] > 0.0
+                && next[VELOCITY + 2] <= 0.0
+            {
+                let frac = (self.state[VELOCITY + 2]
+                    / (self.state[VELOCITY + 2] - next[VELOCITY + 2]))
+                    .clamp(0.0, 1.0);
+                let apogee =
+                    interpolated_event(EventKind::Apogee, self.t, step, self.state, next, frac);
+                self.events.push(apogee);
+                if let Some(recovery) = &self.rocket.recovery {
+                    self.events.push(Event {
+                        kind: EventKind::RecoveryDeploy,
+                        ..apogee
+                    });
+                    if recovery
+                        .main_deploy_altitude_m
+                        .is_some_and(|deploy_m| apogee.altitude_m <= deploy_m)
+                    {
+                        self.events.push(Event {
+                            kind: EventKind::MainDeploy,
+                            ..apogee
+                        });
+                    }
+                }
+                self.state = interpolate_state(self.state, next, frac)?;
+                self.state[VELOCITY + 2] = 0.0;
+                self.state[ANGULAR_RATE..ANGULAR_RATE + 3].fill(0.0);
+                self.tau += apogee.t - self.t;
+                self.t = apogee.t;
+                self.phase = FlightPhase::Descent;
+                self.steps += 1;
+                self.history.push(sample(self.t, self.state, self.phase));
+                return Ok(StepStatus::Running);
+            }
+
+            // Dual-deploy main: step restarts from the crossing so the
+            // main's drag applies from exactly the deploy altitude.
+            if self.phase == FlightPhase::Descent
+                && self
+                    .events
+                    .iter()
+                    .all(|event| event.kind != EventKind::MainDeploy)
+            {
+                if let Some(deploy_m) = self
+                    .rocket
+                    .recovery
+                    .as_ref()
+                    .and_then(|recovery| recovery.main_deploy_altitude_m)
+                {
+                    if self.state[POSITION + 2] > deploy_m && next[POSITION + 2] <= deploy_m {
+                        let frac = ((self.state[POSITION + 2] - deploy_m)
+                            / (self.state[POSITION + 2] - next[POSITION + 2]))
+                            .clamp(0.0, 1.0);
+                        let deploy = interpolated_event(
+                            EventKind::MainDeploy,
+                            self.t,
+                            step,
+                            self.state,
+                            next,
+                            frac,
+                        );
+                        self.events.push(deploy);
+                        self.state = interpolate_state(self.state, next, frac)?;
+                        self.state[POSITION + 2] = deploy_m;
+                        self.tau += deploy.t - self.t;
+                        self.t = deploy.t;
+                        self.steps += 1;
+                        self.history.push(sample(self.t, self.state, self.phase));
+                        return Ok(StepStatus::Running);
+                    }
+                }
+            }
+
+            if self.phase == FlightPhase::Descent
+                && self.state[POSITION + 2] > 0.0
+                && next[POSITION + 2] <= 0.0
+            {
+                let frac = (self.state[POSITION + 2]
+                    / (self.state[POSITION + 2] - next[POSITION + 2]))
+                    .clamp(0.0, 1.0);
+                let landing =
+                    interpolated_event(EventKind::Landing, self.t, step, self.state, next, frac);
+                self.state = interpolate_state(self.state, next, frac)?;
+                self.state[POSITION + 2] = 0.0;
+                self.t = landing.t;
+                self.events.push(landing);
+                self.steps += 1;
+                self.history
+                    .push(sample(self.t, self.state, FlightPhase::Grounded));
+                self.done = true;
+                return Ok(StepStatus::Finished);
+            }
+
+            self.state = next;
+            self.t += step;
+            self.tau += step;
+            self.steps += 1;
+            self.max_velocity = self.max_velocity.max(norm3(vector3(self.state, VELOCITY)));
+            self.history.push(sample(self.t, self.state, self.phase));
+
+            if self.phase == FlightPhase::Ascent
+                && self.weathercock_pitch_deg.is_none()
+                && self.rail_exit_time.is_some_and(|exit| self.t >= exit + 0.5)
+            {
+                self.weathercock_pitch_deg =
+                    Some(pitch_from_quaternion(vector4(self.state, ATTITUDE)));
+            }
+        }
+
+        if self.active < self.last && self.tau >= sep_local - 1e-12 {
+            let t = self.t;
+            let altitude_m = self.state[POSITION + 2];
+            let velocity_ms = norm3(vector3(self.state, VELOCITY));
+            let mark = |kind| Event {
+                kind,
+                t,
+                altitude_m,
+                velocity_ms,
+            };
+            if !self.burnout_emitted {
+                self.events.push(mark(EventKind::Burnout));
+            }
+            self.events.push(mark(EventKind::StageSeparation));
+            self.active += 1;
+            self.rocket = effective_rocket(&self.stages, &self.recovery, self.active);
+            self.tau = 0.0;
+            self.burnout_emitted = false;
+            self.events.push(mark(EventKind::StageIgnition));
+            if self.phase == FlightPhase::Rail {
+                self.phase = FlightPhase::Ascent;
+            }
+        }
+
+        Ok(StepStatus::Running)
+    }
+
+    /// Number of core steps executed so far (mirrors the canonical loop's
+    /// `steps` counter).
+    pub(crate) fn step_cursor(&self) -> u64 {
+        self.steps
+    }
+
+    /// Index of the currently burning/active stage in burn order.
+    pub(crate) fn stage_index(&self) -> usize {
+        self.active
+    }
+
+    /// Instantaneous propulsion magnitude (newtons) of the active stage at the
+    /// current motor clock. Zero between burns — the authoritative burn model
+    /// owns this, so a client must not re-derive it.
+    pub(crate) fn thrust_n(&self) -> f64 {
+        self.stages[self.active].motor.thrust_at(self.tau)
+    }
+
+    /// The most recent recorded flight sample (seeded at t = 0, so always
+    /// present).
+    pub(crate) fn latest_sample(&self) -> &SixDofSample {
+        self.history.last().expect("history is seeded at t = 0")
+    }
+
+    /// The ordered flight events derived so far.
+    pub(crate) fn events(&self) -> &[Event] {
+        &self.events
+    }
+
+    /// Assemble the result from the current state. Identical to the canonical
+    /// loop's tail; safe to call at any point (before completion it yields the
+    /// partial history assembled so far).
+    pub(crate) fn finalize(&self) -> SixDofResult {
+        let event = |kind| self.events.iter().find(|event| event.kind == kind).copied();
+        let apogee = event(EventKind::Apogee);
+        let burnout = event(EventKind::Burnout);
+        let rail_exit = event(EventKind::RailExit);
+        let landing = event(EventKind::Landing);
+        let final_motor = &self.stages[self.last].motor;
+        let sim_result = SimResult {
+            samples: Vec::new(),
+            events: self.events.clone(),
+            apogee_m: apogee.map_or(self.state[POSITION + 2], |event| event.altitude_m),
+            apogee_time_s: apogee.map_or(self.t, |event| event.t),
+            burnout_time_s: burnout.map_or(final_motor.burn_time(), |event| event.t),
+            burnout_velocity_ms: burnout.map_or(0.0, |event| event.velocity_ms),
+            burnout_altitude_m: burnout.map_or(0.0, |event| event.altitude_m),
+            max_velocity_ms: self.max_velocity,
+            rail_exit_velocity_ms: rail_exit.map_or(f64::NAN, |event| event.velocity_ms),
+            landing_time_s: landing.map_or(f64::NAN, |event| event.t),
+            landing_velocity_ms: landing.map_or(f64::NAN, |event| event.velocity_ms),
+            steps: self.steps,
+        };
+        let mut summary = SimSummary::from_result(
+            &sim_result,
+            &self.rocket,
+            final_motor,
+            &self.env,
+            &self.config,
+        );
+        // Hash the full staged input set, not just the final configuration.
+        let canonical = serde_json::json!({
+            "stages": self.stages,
+            "recovery": self.recovery,
+            "environment": self.env,
+            "config": self.config,
+            "wind": self.wind,
+            "launch": self.launch,
+        });
+        let mut hasher = Sha256::new();
+        hasher.update(serde_json::to_vec(&canonical).expect("staged six-DOF inputs serialize"));
+        summary.input_hash = format!("{:x}", hasher.finalize());
+
+        SixDofResult {
+            summary,
+            history: self.history.clone(),
+            landing_position_m: vector3(self.state, POSITION),
+            weathercock_pitch_deg: self.weathercock_pitch_deg.unwrap_or(0.0),
+        }
+    }
+}
+
 /// Staged 6-DOF flight with variable-mass handoff: same phase logic as
 /// `run_detailed`, a stage-local motor clock, steps snapped to the exact
 /// separation instant, and `StageSeparation`/`StageIgnition` in the event
 /// timeline. Apogee → descent arms only on the final stage.
+///
+/// This is the canonical batch entry point: it drives [`StagedStepper`] — the
+/// same re-entrant integrator that [`crate::run_session::RunSession`] steps —
+/// to completion, so batch and stepped runs are bit-for-bit identical.
 pub fn simulate_sixdof_staged(
     stages: &[SixDofStage],
     recovery: Option<crate::rocket::Recovery>,
@@ -461,305 +946,9 @@ pub fn simulate_sixdof_staged(
     env: &Environment,
     config: &SimConfig,
 ) -> Result<SixDofResult, String> {
-    if stages.is_empty() {
-        return Err("at least one stage required".into());
-    }
-    let last = stages.len() - 1;
-    let carried_above = |k: usize| -> f64 {
-        stages[k + 1..]
-            .iter()
-            .map(|s| s.dry_mass_kg + s.motor.mass_at(0.0))
-            .sum::<f64>()
-    };
-    let effective_rocket = |k: usize| -> Rocket {
-        Rocket {
-            name: String::new(),
-            dry_mass_kg: stages[k].dry_mass_kg + carried_above(k),
-            drag: stages[k].drag.clone(),
-            recovery: recovery.clone(),
-        }
-    };
-
-    // Per-stage engines re-run the input validation on each vehicle.
-    let engines: Vec<SixDofEngine> = stages
-        .iter()
-        .map(|s| SixDofEngine::new(s.vehicle.clone(), wind.clone(), launch.clone()))
-        .collect::<Result<_, _>>()?;
-
-    let mut active = 0usize;
-    let mut rocket = effective_rocket(0);
-    validate_run_inputs(&rocket, env, config)?;
-
-    let dt = config.dt_s;
-    let rail_axis = launch_axis(launch);
-    let launch_attitude = launch_quaternion(launch);
-    let mut state = [0.0; STATE_LEN];
-    state[ATTITUDE..ATTITUDE + 4].copy_from_slice(&launch_attitude);
-    let mut t = 0.0;
-    let mut tau = 0.0; // active-stage motor clock
-    let mut burnout_emitted = false;
-    let mut phase = FlightPhase::Pad;
-    let mut history = vec![sample(t, state, phase)];
-    let mut events: Vec<Event> = Vec::new();
-    let mut steps = 0_u64;
-    let mut max_velocity = 0.0_f64;
-    let mut rail_exit_time = None;
-    let mut weathercock_pitch_deg = None;
-
-    while t < config.max_time_s {
-        let motor = &stages[active].motor;
-        let vehicle = &engines[active].vehicle;
-        let burn_time = motor.burn_time();
-
-        if phase == FlightPhase::Pad {
-            let mass_now = rocket.dry_mass_kg + motor.mass_at(tau);
-            let mass_next = rocket.dry_mass_kg + motor.mass_at(tau + dt);
-            let opposing_gravity = env.gravity_ms2 * rail_axis[2];
-            let held = motor.thrust_at(tau) <= mass_now * opposing_gravity
-                && motor.thrust_at(tau + dt) <= mass_next * opposing_gravity;
-            if held {
-                if tau >= burn_time {
-                    break;
-                }
-                t += dt;
-                tau += dt;
-                steps += 1;
-                continue;
-            }
-            events.push(Event {
-                kind: EventKind::Liftoff,
-                t,
-                altitude_m: 0.0,
-                velocity_ms: 0.0,
-            });
-            phase = FlightPhase::Rail;
-        }
-
-        let sep_local = burn_time + stages[active].separation_delay_s;
-        let step = if active < last && tau + dt > sep_local {
-            sep_local - tau
-        } else {
-            dt
-        };
-
-        if step > 1e-12 {
-            let mut next = rk4_step(
-                tau, state, step, phase, &rocket, motor, env, vehicle, wind, rail_axis,
-            )?;
-            normalize_state_quaternion(&mut next)?;
-
-            if phase == FlightPhase::Rail
-                && dot3(vector3(state, POSITION), rail_axis) <= 0.0
-                && dot3(vector3(state, VELOCITY), rail_axis) <= 0.0
-                && tau < burn_time
-            {
-                constrain_rail_state(&mut next, rail_axis, launch_attitude, true);
-            }
-
-            let from_rail_distance = dot3(vector3(state, POSITION), rail_axis);
-            let to_rail_distance = dot3(vector3(next, POSITION), rail_axis);
-            if phase == FlightPhase::Rail && from_rail_distance > 0.0 && to_rail_distance <= 0.0 {
-                let frac =
-                    (from_rail_distance / (from_rail_distance - to_rail_distance)).clamp(0.0, 1.0);
-                state = interpolate_state(state, next, frac)?;
-                constrain_rail_state(&mut state, rail_axis, launch_attitude, true);
-                state[POSITION..POSITION + 3].fill(0.0);
-                state[VELOCITY..VELOCITY + 3].fill(0.0);
-                t += frac * step;
-                tau += frac * step;
-                phase = FlightPhase::Pad;
-                steps += 1;
-                history.push(sample(t, state, phase));
-                continue;
-            }
-            if phase == FlightPhase::Rail
-                && from_rail_distance < env.rail_length_m
-                && to_rail_distance >= env.rail_length_m
-            {
-                let frac = ((env.rail_length_m - from_rail_distance)
-                    / (to_rail_distance - from_rail_distance))
-                    .clamp(0.0, 1.0);
-                let event = interpolated_event(EventKind::RailExit, t, step, state, next, frac);
-                rail_exit_time = Some(event.t);
-                events.push(event);
-                phase = FlightPhase::Ascent;
-            }
-
-            if !burnout_emitted && tau + step >= burn_time - 1e-9 {
-                let frac = if step > 0.0 {
-                    ((burn_time - tau) / step).clamp(0.0, 1.0)
-                } else {
-                    0.0
-                };
-                events.push(interpolated_event(
-                    EventKind::Burnout,
-                    t,
-                    step,
-                    state,
-                    next,
-                    frac,
-                ));
-                burnout_emitted = true;
-            }
-
-            if active == last
-                && phase == FlightPhase::Ascent
-                && state[VELOCITY + 2] > 0.0
-                && next[VELOCITY + 2] <= 0.0
-            {
-                let frac = (state[VELOCITY + 2] / (state[VELOCITY + 2] - next[VELOCITY + 2]))
-                    .clamp(0.0, 1.0);
-                let apogee = interpolated_event(EventKind::Apogee, t, step, state, next, frac);
-                events.push(apogee);
-                if let Some(recovery) = &rocket.recovery {
-                    events.push(Event {
-                        kind: EventKind::RecoveryDeploy,
-                        ..apogee
-                    });
-                    if recovery
-                        .main_deploy_altitude_m
-                        .is_some_and(|deploy_m| apogee.altitude_m <= deploy_m)
-                    {
-                        events.push(Event {
-                            kind: EventKind::MainDeploy,
-                            ..apogee
-                        });
-                    }
-                }
-                state = interpolate_state(state, next, frac)?;
-                state[VELOCITY + 2] = 0.0;
-                state[ANGULAR_RATE..ANGULAR_RATE + 3].fill(0.0);
-                tau += apogee.t - t;
-                t = apogee.t;
-                phase = FlightPhase::Descent;
-                steps += 1;
-                history.push(sample(t, state, phase));
-                continue;
-            }
-
-            // Dual-deploy main: step restarts from the crossing so the
-            // main's drag applies from exactly the deploy altitude.
-            if phase == FlightPhase::Descent
-                && events
-                    .iter()
-                    .all(|event| event.kind != EventKind::MainDeploy)
-            {
-                if let Some(deploy_m) = rocket
-                    .recovery
-                    .as_ref()
-                    .and_then(|recovery| recovery.main_deploy_altitude_m)
-                {
-                    if state[POSITION + 2] > deploy_m && next[POSITION + 2] <= deploy_m {
-                        let frac = ((state[POSITION + 2] - deploy_m)
-                            / (state[POSITION + 2] - next[POSITION + 2]))
-                            .clamp(0.0, 1.0);
-                        let deploy =
-                            interpolated_event(EventKind::MainDeploy, t, step, state, next, frac);
-                        events.push(deploy);
-                        state = interpolate_state(state, next, frac)?;
-                        state[POSITION + 2] = deploy_m;
-                        tau += deploy.t - t;
-                        t = deploy.t;
-                        steps += 1;
-                        history.push(sample(t, state, phase));
-                        continue;
-                    }
-                }
-            }
-
-            if phase == FlightPhase::Descent
-                && state[POSITION + 2] > 0.0
-                && next[POSITION + 2] <= 0.0
-            {
-                let frac = (state[POSITION + 2] / (state[POSITION + 2] - next[POSITION + 2]))
-                    .clamp(0.0, 1.0);
-                let landing = interpolated_event(EventKind::Landing, t, step, state, next, frac);
-                state = interpolate_state(state, next, frac)?;
-                state[POSITION + 2] = 0.0;
-                t = landing.t;
-                events.push(landing);
-                steps += 1;
-                history.push(sample(t, state, FlightPhase::Grounded));
-                break;
-            }
-
-            state = next;
-            t += step;
-            tau += step;
-            steps += 1;
-            max_velocity = max_velocity.max(norm3(vector3(state, VELOCITY)));
-            history.push(sample(t, state, phase));
-
-            if phase == FlightPhase::Ascent
-                && weathercock_pitch_deg.is_none()
-                && rail_exit_time.is_some_and(|exit| t >= exit + 0.5)
-            {
-                weathercock_pitch_deg = Some(pitch_from_quaternion(vector4(state, ATTITUDE)));
-            }
-        }
-
-        if active < last && tau >= sep_local - 1e-12 {
-            let mark = |kind| Event {
-                kind,
-                t,
-                altitude_m: state[POSITION + 2],
-                velocity_ms: norm3(vector3(state, VELOCITY)),
-            };
-            if !burnout_emitted {
-                events.push(mark(EventKind::Burnout));
-            }
-            events.push(mark(EventKind::StageSeparation));
-            active += 1;
-            rocket = effective_rocket(active);
-            tau = 0.0;
-            burnout_emitted = false;
-            events.push(mark(EventKind::StageIgnition));
-            if phase == FlightPhase::Rail {
-                phase = FlightPhase::Ascent;
-            }
-        }
-    }
-
-    let event = |kind| events.iter().find(|event| event.kind == kind).copied();
-    let apogee = event(EventKind::Apogee);
-    let burnout = event(EventKind::Burnout);
-    let rail_exit = event(EventKind::RailExit);
-    let landing = event(EventKind::Landing);
-    let final_motor = &stages[last].motor;
-    let sim_result = SimResult {
-        samples: Vec::new(),
-        events,
-        apogee_m: apogee.map_or(state[POSITION + 2], |event| event.altitude_m),
-        apogee_time_s: apogee.map_or(t, |event| event.t),
-        burnout_time_s: burnout.map_or(final_motor.burn_time(), |event| event.t),
-        burnout_velocity_ms: burnout.map_or(0.0, |event| event.velocity_ms),
-        burnout_altitude_m: burnout.map_or(0.0, |event| event.altitude_m),
-        max_velocity_ms: max_velocity,
-        rail_exit_velocity_ms: rail_exit.map_or(f64::NAN, |event| event.velocity_ms),
-        landing_time_s: landing.map_or(f64::NAN, |event| event.t),
-        landing_velocity_ms: landing.map_or(f64::NAN, |event| event.velocity_ms),
-        steps,
-    };
-    let mut summary = SimSummary::from_result(&sim_result, &rocket, final_motor, env, config);
-    // Hash the full staged input set, not just the final configuration.
-    let canonical = serde_json::json!({
-        "stages": stages,
-        "recovery": recovery,
-        "environment": env,
-        "config": config,
-        "wind": wind,
-        "launch": launch,
-    });
-    let mut hasher = Sha256::new();
-    hasher.update(serde_json::to_vec(&canonical).expect("staged six-DOF inputs serialize"));
-    summary.input_hash = format!("{:x}", hasher.finalize());
-
-    Ok(SixDofResult {
-        summary,
-        history,
-        landing_position_m: vector3(state, POSITION),
-        weathercock_pitch_deg: weathercock_pitch_deg.unwrap_or(0.0),
-    })
+    let mut stepper = StagedStepper::new(stages, recovery, wind, launch, env, config)?;
+    while matches!(stepper.step()?, StepStatus::Running) {}
+    Ok(stepper.finalize())
 }
 
 #[allow(clippy::too_many_arguments)]
