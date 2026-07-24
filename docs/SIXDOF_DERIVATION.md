@@ -1,9 +1,26 @@
-# Six-Degree-of-Freedom Flight Solver Contract
+# Reduced Rotational Flight Solver Contract
 
 This document fixes the equations, coordinate conventions, event semantics,
-determinism rules, and evidence envelope for Ascent's production 6-DOF tier.
-All internal quantities are SI. The implementation is intentionally limited to
-pitch and yaw rigid-body response: roll dynamics and fin cant are unsupported.
+determinism rules, and evidence envelope for Ascent's `SixDof` solver. The
+name is heritage: the solver integrates an attitude, but its rotational
+dynamics are deliberately reduced, so "6-DOF" here labels the tier, not a
+fidelity claim. All internal quantities are SI.
+
+The integrated state is a 13-element rigid-body vector, but the rotational
+response is intentionally limited to a pitch/yaw restoring torque about the
+static margin. The model does **not** include:
+
+- roll dynamics or fin cant (the roll-rate derivative is never written);
+- a full inertia tensor — one scalar pitch/yaw inertia is used, so there is no
+  inertia-tensor cross-coupling between axes;
+- gyroscopic cross-coupling between body axes;
+- aerodynamic rotational damping (no pitch/yaw damping derivatives).
+
+The attitude is also **frozen during descent**: the rotational block is
+integrated only in the ascent phase. Every attitude and angular-rate output is
+therefore a reduced-model estimate for ascent, not a validated
+six-degree-of-freedom prediction. See [`docs/EVIDENCE_LADDER.md`](EVIDENCE_LADDER.md)
+for the evidence backing these outputs.
 
 ## State and coordinate conventions
 

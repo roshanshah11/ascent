@@ -8,7 +8,7 @@ Model aerospace vehicles, run validated and repeatable flight-dynamics studies, 
 
 ## Thesis
 
-Serious open aerospace tools offer deep capability but often require specialists to assemble libraries, scripts, files, and visualization surfaces into a working campaign. Ascent occupies the missing workbench layer: Basilisk-grade rigor, validation discipline, modular fidelity, managed studies, provenance, undo, visualization, and agent operation in one coherent local application.
+Serious open aerospace tools offer deep capability but often require specialists to assemble libraries, scripts, files, and visualization surfaces into a working campaign. Ascent occupies the missing workbench layer: Basilisk-grade evidence discipline (validation, provenance, and verification rigor — not comparable model depth), modular fidelity, managed studies, undo, visualization, and agent operation in one coherent local application.
 
 The measuring user is a GNC or flight-dynamics engineer at a new-space or defense-tech startup. Ascent is built for craft, not for a sales wedge. It is not student software, competition-team software, a hobby product, or an OpenRocket replacement.
 

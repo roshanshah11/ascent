@@ -301,7 +301,7 @@ export interface EvidenceReport {
   validation_cases: Array<{
     case_id: string;
     title: string;
-    evidence_level: "analytic" | "unit_verified" | "regression_compatible" | "cross_validated" | "flight_validated";
+    evidence_level: "analytic" | "unit_verified" | "regression_compatible" | "cross_validated" | "flight_data_available" | "flight_validated";
     intended_use: string;
     validity_domain: string[];
     caveats: string[];

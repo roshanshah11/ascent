@@ -117,7 +117,12 @@ export default function ProjectExplorer({
           <span className="tree-disclosure" aria-hidden="true" />
           <Flask size={14} weight="duotone" />
           <span className="tree-label">Flight model</span>
-          <span className="tree-meta">6-DOF</span>
+          <span
+            className="tree-meta"
+            title="Reduced rotational model (13-state): pitch/yaw restoring only — no roll, no rotational damping; attitude frozen during descent"
+          >
+            reduced rot.
+          </span>
         </button>
         <button
           type="button"

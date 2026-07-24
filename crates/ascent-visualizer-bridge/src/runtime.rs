@@ -1,7 +1,7 @@
 //! Read-only supervised bridge runtime.
 //!
 //! The bridge speaks visualizer protocol v1 over stdio. It loads exactly one
-//! in-memory reference mission, runs the existing staged 6-DOF trace, and
+//! in-memory reference mission, runs the existing staged reduced-rotational trace, and
 //! streams a deterministic, hash-valid result. It accepts no path, URL, Ascent
 //! command, or document mutation — the only input surface is the closed set of
 //! [`ClientRequest`] kinds.
@@ -49,7 +49,7 @@ fn build_trace() -> Result<Trace, String> {
     Ok(assemble_trace(&result))
 }
 
-/// Decimate a completed 6-DOF result into the canonical streamed trace
+/// Decimate a completed reduced-rotational result into the canonical streamed trace
 /// (channels in canonical order, events, and the hash over both). Shared by the
 /// legacy batch run and the interactive session so a session stepped to
 /// completion streams a byte-identical, identically-hashed trace.

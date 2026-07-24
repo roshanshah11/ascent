@@ -122,7 +122,7 @@ pub fn evidence_for_with_atmosphere(
         models: vec![
             format!("Fixed-step RK4 integrator, dt {} s", config.dt_s),
             atmosphere.map_or_else(
-                || "US Standard Atmosphere 1976 (validated vs published density table)".into(),
+                || "US Standard Atmosphere 1976 (verified against published 1976 density table)".into(),
                 |profile| format!("Imported atmosphere profile: {} ({} layers)", profile.name, profile.layers.len()),
             ),
             "Point-mass vertical flight: pad hold, rail phase, quadratic drag".into(),
@@ -284,7 +284,9 @@ mod tests {
             "docs/CREDIBILITY.md fixes five factors"
         );
         assert!(ev.credibility.factors.iter().all(|f| !f.basis.is_empty()));
-        // The reference bird is subsonic and converged: everything validated.
+        // The reference bird is subsonic and converged: every quantity is within
+        // its evidence-backed reference regime (Regime::Validated, defined in
+        // docs/CREDIBILITY.md — not a claim of real-flight validation).
         assert!(ev
             .credibility
             .quantities
@@ -292,7 +294,7 @@ mod tests {
             .all(|q| q.regime == Regime::Validated));
         assert_eq!(ev.validation_cases.len(), 4);
         assert!(ev.validation_cases.iter().any(|case| {
-            case.evidence_level == EvidenceLevel::FlightValidated && !case.caveats.is_empty()
+            case.evidence_level == EvidenceLevel::FlightDataAvailable && !case.caveats.is_empty()
         }));
     }
 

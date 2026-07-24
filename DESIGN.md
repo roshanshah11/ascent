@@ -4,7 +4,7 @@
 
 ## 1. What this describes
 
-Ascent is a local-first aerospace engineering workbench for modeling, simulation, uncertainty analysis, verification, and evidence. Its north star is *Basilisk-grade rigor inside a real workbench that an AI agent can operate*. The measuring user is a GNC or flight-dynamics engineer at a new-space or defense-tech startup.
+Ascent is a local-first aerospace engineering workbench for modeling, simulation, uncertainty analysis, verification, and evidence. Its north star is *Basilisk-grade evidence discipline inside a real workbench that an AI agent can operate* — comparable rigor in verification, provenance, and validation, not a claim of comparable model or physics depth. The measuring user is a GNC or flight-dynamics engineer at a new-space or defense-tech startup.
 
 The design exists to serve five engineering priorities: validated physics with named baselines, bit-for-bit repeatability with provenance, modular dynamics/environment/vehicle interfaces, professional workflows (model tree, studies, verification, reports), and **one audited command surface shared by GUI, CLI, console, and MCP agents**.
 
@@ -28,7 +28,7 @@ ascent-domain   motors + vehicle model tree           (no renderer, no UI, no en
       │
       ├── ascent-aero    Barrowman CP, CG, stability, rule-pack constraints
       │
-      ├── ascent-sim     flight engines: 1-DOF / 3-DOF planar / 6-DOF / dispersion / staged
+      ├── ascent-sim     flight engines: 1-DOF / 3-DOF planar / reduced-rotational / dispersion / staged
       │
       ├── ascent-review  requirements verification + repair solver + structural margins
       │
@@ -51,7 +51,7 @@ Barrowman center-of-pressure (`barrowman.rs`, worksheet in `docs/BARROWMAN_WORKS
 All engines are deterministic and take plain numbers; tree→parameter derivation lives upstream. The curated surface:
 - `sim`: RK4 1-DOF vertical + convergence report
 - `planar`: 3-DOF planar, staged variant, wind profiles
-- `sixdof`: 6-DOF engine, staged, 3D wind, launch config
+- `sixdof`: reduced-rotational engine (13-state; pitch/yaw restoring only — no roll, no rotational damping, attitude frozen in descent), staged, 3D wind, launch config
 - `dispersion`: Monte-Carlo ensembles over seeded parameter variations, landing ellipses
 - `atmosphere` / `rocket` / `profile`: 1976 standard atmosphere, drag/recovery models, imported soundings
 - `engine`: the `SimEngine` trait + registry so engines are swappable

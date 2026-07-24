@@ -1,3 +1,32 @@
+//! Reduced rotational flight solver.
+//!
+//! The names `SixDof`/`sixdof` throughout this module are heritage: they mark
+//! the solver that carries an attitude, **not** a claim of full six-degree-of-
+//! freedom fidelity. The integrated state is a 13-element rigid-body vector
+//! `[position(3), velocity(3), quaternion(4), angular_rate(3)]`, but the
+//! rotational dynamics are deliberately reduced to a pitch/yaw restoring
+//! response about the static margin (`cp_from_nose_m - cg_from_nose_m`) using a
+//! single scalar `pitch_yaw_inertia_kgm2`.
+//!
+//! What this model does **not** include:
+//!
+//! - **No roll dynamics.** The roll-rate derivative (`ANGULAR_RATE + 2`) is
+//!   never written; there is no roll torque and no fin cant.
+//! - **No full inertia tensor.** One scalar pitch/yaw inertia is used, so there
+//!   is no inertia-tensor coupling between axes.
+//! - **No gyroscopic cross-coupling** between the body axes.
+//! - **No aerodynamic rotational damping** (no pitch/yaw damping derivatives);
+//!   the only rotational term is the static-margin restoring torque.
+//! - **Attitude is frozen during descent.** The entire rotational block (normal
+//!   force, restoring torque, and quaternion propagation) is gated to
+//!   `FlightPhase::Ascent`; after apogee the quaternion and body rates do not
+//!   evolve.
+//!
+//! Every attitude and angular-rate output is therefore a reduced-model estimate
+//! for the powered/coasting ascent, not a validated six-degree-of-freedom
+//! prediction. See `docs/SIXDOF_DERIVATION.md` for the equations and
+//! `docs/EVIDENCE_LADDER.md` for what evidence backs these outputs.
+
 use ascent_domain::Motor;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -96,7 +125,7 @@ impl SixDofLaunch {
     }
 }
 
-/// Immutable configured six-degree-of-freedom engine.
+/// Immutable configured reduced-rotational flight engine (see module docs).
 pub struct SixDofEngine {
     vehicle: SixDofVehicle,
     wind: Wind3DProfile,
@@ -435,7 +464,7 @@ impl SimEngine for SixDofEngine {
     }
 }
 
-/// One burn phase of a staged 6-DOF flight, in burn order. Mirrors
+/// One burn phase of a staged reduced-rotational flight, in burn order. Mirrors
 /// `PlanarStage`: `dry_mass_kg` is what separates with this stage, and
 /// `vehicle` describes the stack configuration this stage flies.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -482,7 +511,7 @@ fn effective_rocket(
     }
 }
 
-/// Re-entrant driver for a staged 6-DOF flight. This owns the exact
+/// Re-entrant driver for a staged reduced-rotational flight. This owns the exact
 /// integration state of the canonical `simulate_sixdof_staged` loop; one
 /// [`StagedStepper::step`] call executes one iteration of that loop, so a
 /// batch run and a stepped run share a single integrator and identical
@@ -930,7 +959,7 @@ impl StagedStepper {
     }
 }
 
-/// Staged 6-DOF flight with variable-mass handoff: same phase logic as
+/// Staged reduced-rotational flight with variable-mass handoff: same phase logic as
 /// `run_detailed`, a stage-local motor clock, steps snapped to the exact
 /// separation instant, and `StageSeparation`/`StageIgnition` in the event
 /// timeline. Apogee → descent arms only on the final stage.

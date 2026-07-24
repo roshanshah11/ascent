@@ -24,7 +24,7 @@ fn checked_in_ladder_is_complete_provenance_bound_and_qualified() {
     assert_eq!(cases[0].evidence_level, EvidenceLevel::Analytic);
     assert_eq!(cases[1].evidence_level, EvidenceLevel::RegressionCompatible);
     assert_eq!(cases[2].evidence_level, EvidenceLevel::CrossValidated);
-    assert_eq!(cases[3].evidence_level, EvidenceLevel::FlightValidated);
+    assert_eq!(cases[3].evidence_level, EvidenceLevel::FlightDataAvailable);
     for case in &cases {
         case.verify_fixture(&workspace()).unwrap();
         assert!(!case.fixture.license.is_empty());

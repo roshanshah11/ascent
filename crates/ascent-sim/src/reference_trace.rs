@@ -1,11 +1,12 @@
-//! Deterministic two-stage 6-DOF trace for an evidence-graded reference
-//! mission.
+//! Deterministic two-stage reduced-rotational trace for an evidence-graded
+//! reference mission.
 //!
 //! This lives in `ascent-sim` (not `ascent-domain`) because the trace consumes
 //! `simulate_sixdof_staged`, and `ascent-domain` must not depend on
 //! `ascent-sim`. The reference *definition* (geometry, sources, evidence) lives
 //! in `ascent_domain::reference`; this module maps that definition to a staged
-//! 6-DOF run.
+//! reduced-rotational run (the `sixdof` model — see its module docs for the
+//! rotational limitations).
 
 use ascent_domain::reference::ReferenceMission;
 use ascent_domain::vehicle::{Part, PartKind, Vehicle};
@@ -202,7 +203,7 @@ fn walk_part(part: &Part, fore: f64, len: f64, items: &mut Vec<GeomItem>, r_max:
     }
 }
 
-/// Run the deterministic two-stage 6-DOF trace for a reference mission.
+/// Run the deterministic two-stage reduced-rotational trace for a reference mission.
 ///
 /// The trace is a pure function of the mission's vehicle + evidence-bound motors:
 /// identical inputs always produce a [`SixDofResult`] with an identical

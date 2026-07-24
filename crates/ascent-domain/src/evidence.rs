@@ -430,6 +430,29 @@ impl TelemetryBundle {
     }
 }
 
+/// The evidence ladder, weakest to strongest. Each rung names a *distinct kind*
+/// of evidence, not merely "more testing":
+///
+/// - `Analytic` — agrees with a closed-form solution.
+/// - `UnitVerified` — a unit/property test pins the behavior.
+/// - `RegressionCompatible` — reproduces another tool's export within a frozen
+///   tolerance (compatibility, not correctness).
+/// - `CrossValidated` — agrees with an independent engine (e.g. RocketPy) on a
+///   shared configuration.
+/// - `FlightDataAvailable` — real measured flight data is present, license-clear
+///   and hash-pinned, and the review plumbing ingests it — but the model's
+///   numerical outputs have **not** yet been compared against it. This rung
+///   makes a claim about *data availability*, never about model accuracy.
+/// - `FlightValidated` — the model was executed and its numerical outputs were
+///   compared against measured flight data, and the comparison **passed**
+///   predefined tolerances. A case may only carry this rung if it also carries
+///   an executed [`crate`]-external comparison artifact; the artifact's fields
+///   (metrics, tolerances, pass/fail, source hashes, model version) are what the
+///   label attests to. Without that artifact the label cannot be loaded — see
+///   `ascent_review::validation::ValidationCase`.
+///
+/// The variants are *not* `Ord`: promotion between rungs is a deliberate,
+/// evidence-gated act, never an automatic "greater-than".
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceLevel {
@@ -437,6 +460,7 @@ pub enum EvidenceLevel {
     UnitVerified,
     RegressionCompatible,
     CrossValidated,
+    FlightDataAvailable,
     FlightValidated,
 }
 

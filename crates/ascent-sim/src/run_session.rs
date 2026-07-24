@@ -1,4 +1,4 @@
-//! Re-entrant staged 6-DOF run driven from an immutable mission snapshot.
+//! Re-entrant staged reduced-rotational run driven from an immutable mission snapshot.
 //!
 //! This is the pure-Rust seam for an interactive review: a [`MissionSnapshot`]
 //! captures the immutable input facts of a flight, and a [`RunSession`] steps
@@ -163,7 +163,7 @@ pub struct FlightEvent {
     pub velocity_ms: f64,
 }
 
-/// A live-controllable staged 6-DOF run.
+/// A live-controllable staged reduced-rotational run.
 ///
 /// The control surface is intentionally minimal and matches the four
 /// operations a first live seam needs:

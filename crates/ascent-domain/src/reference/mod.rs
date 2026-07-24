@@ -4,7 +4,7 @@
 //! set of [`Source`] documents and [`EvidenceBinding`]s that grade every field
 //! used to construct it. The vertical slice (Step 1 of the Unity visual-engine
 //! plan) ships the NASA Black Brant IX reference mission; the deterministic
-//! two-stage 6-DOF trace that consumes it lives in `ascent-sim`
+//! two-stage reduced-rotational trace that consumes it lives in `ascent-sim`
 //! (`ascent_sim::reference_trace`), because `ascent-domain` must not depend on
 //! `ascent-sim`.
 

@@ -4,9 +4,9 @@
 
 ## What Ascent is
 
-Ascent is a professional, local-first aerospace engineering workbench for modeling, simulation, uncertainty analysis, verification, and evidence. It combines the rigor expected from Basilisk, Nyx, RocketPy, and GMAT workflows with a coherent native workbench that both engineers and AI agents can operate through the same audited command layer.
+Ascent is a local-first aerospace engineering workbench for modeling, simulation, uncertainty analysis, verification, and evidence. It aims for the evidence and workflow discipline expected from Basilisk, Nyx, RocketPy, and GMAT workflows — not their model or physics depth — inside a coherent native workbench that both engineers and AI agents can operate through the same audited command layer.
 
-**North star:** Basilisk-grade rigor inside a real workbench that an AI agent can operate.
+**North star:** Basilisk-grade evidence discipline — comparable verification, provenance, and validation rigor, not comparable model depth — inside a real workbench that an AI agent can operate.
 
 The measuring user is a GNC or flight-dynamics engineer at a new-space or defense-tech startup. A feature belongs when that engineer would respect its numerical honesty, architecture, reproducibility, and usefulness.
 

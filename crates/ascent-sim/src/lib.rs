@@ -1,4 +1,4 @@
-//! Flight engines: RK4 1-DOF vertical, planar 3-DOF, 6-DOF, dispersion,
+//! Flight engines: RK4 1-DOF vertical, planar 3-DOF, reduced-rotational, dispersion,
 //! and staged variants — all deterministic (same inputs → same bytes).
 //! Engines take plain numbers; tree→parameter derivation lives upstream
 //! (ascent-aero / ascent-app). The curated surface is:
