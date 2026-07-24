@@ -187,6 +187,26 @@ impl ValidationCase {
     }
 }
 
+/// How a compared metric participates in the overall comparison result.
+///
+/// The distinction is deliberate: a `Primary` metric is a *flight-validation*
+/// metric whose pass/fail gates the overall comparison, while an
+/// `InputConsistency` metric is a self-check on the inputs (e.g. simulated
+/// burnout vs. the imported motor's burn time) that is verified and reported
+/// but **never** counted toward the flight-validation pass/fail. Serialized
+/// artifacts written before this field existed deserialize as `Primary`, which
+/// preserves the original "every metric gates the result" behavior.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MetricKind {
+    /// A flight-validation metric: contributes to the overall comparison pass.
+    #[default]
+    Primary,
+    /// An input-consistency check: verified and reported, but excluded from the
+    /// overall flight-validation pass/fail.
+    InputConsistency,
+}
+
 /// One metric of an executed comparison: the measured value, the simulated
 /// value the model produced, both error forms, the tolerance decided *before*
 /// the result was seen, and the pass/fail that follows from them.
@@ -194,12 +214,60 @@ impl ValidationCase {
 pub struct ComparedMetric {
     pub id: String,
     pub unit: String,
+    /// Whether this metric gates the overall result (`Primary`) or is an
+    /// input-consistency self-check (`InputConsistency`). Defaults to `Primary`.
+    #[serde(default)]
+    pub kind: MetricKind,
     pub measured: f64,
     pub simulated: f64,
     pub abs_error: f64,
     pub rel_error: f64,
     pub tolerance: f64,
     pub pass: bool,
+}
+
+impl ComparedMetric {
+    /// The only honest constructor: derive `abs_error`, `rel_error`, and `pass`
+    /// from the measured/simulated pair and the pre-frozen `tolerance`, using
+    /// exactly the expressions [`ComparisonArtifact::validate`] re-checks. A
+    /// metric built here therefore always survives validation, and a failing
+    /// comparison cannot be turned into a pass without changing the numbers that
+    /// produced it. `rel_error` is defined as 0 when `measured` is 0 (the
+    /// convention `validate` enforces), which is what lets a normalized-residual
+    /// metric use a 0 baseline.
+    pub fn derive(
+        id: impl Into<String>,
+        unit: impl Into<String>,
+        measured: f64,
+        simulated: f64,
+        tolerance: f64,
+    ) -> Self {
+        let abs_error = (simulated - measured).abs();
+        let rel_error = if measured.abs() > 0.0 {
+            abs_error / measured.abs()
+        } else {
+            0.0
+        };
+        Self {
+            id: id.into(),
+            unit: unit.into(),
+            kind: MetricKind::Primary,
+            measured,
+            simulated,
+            abs_error,
+            rel_error,
+            tolerance,
+            pass: abs_error <= tolerance,
+        }
+    }
+
+    /// Reclassify a derived metric as an input-consistency check, so it is
+    /// verified and reported but excluded from the overall flight-validation
+    /// pass/fail. The numbers are untouched — only its role changes.
+    pub fn as_input_consistency(mut self) -> Self {
+        self.kind = MetricKind::InputConsistency;
+        self
+    }
 }
 
 /// Machine-readable proof that the model was executed and compared against
@@ -226,7 +294,10 @@ pub struct ComparisonArtifact {
     /// SHA-256 of the canonical simulation input that produced the outputs.
     pub input_hash: String,
     pub metrics: Vec<ComparedMetric>,
-    /// Overall result: true iff every metric passed.
+    /// Overall flight-validation result: true iff there is at least one
+    /// `Primary` metric and every `Primary` metric passed. `InputConsistency`
+    /// metrics are excluded — they are self-checks, not flight-validation
+    /// evidence, and cannot alone force a pass or fail.
     pub pass: bool,
     pub known_limitations: Vec<String>,
 }
@@ -317,11 +388,53 @@ impl ComparisonArtifact {
                 ));
             }
         }
-        let all_pass = self.metrics.iter().all(|metric| metric.pass);
-        if self.pass != all_pass {
-            return Err("comparison overall pass disagrees with its metrics".into());
+        // The overall result is derived from the *primary* (flight-validation)
+        // metrics only. An input-consistency check never gates the pass, and a
+        // comparison with no primary metric at all cannot claim a pass.
+        let mut primary = self
+            .metrics
+            .iter()
+            .filter(|metric| metric.kind == MetricKind::Primary)
+            .peekable();
+        let expected_pass = primary.peek().is_some() && primary.all(|metric| metric.pass);
+        if self.pass != expected_pass {
+            return Err("comparison overall pass disagrees with its primary metrics".into());
         }
         Ok(())
+    }
+
+    /// Assemble an artifact from already-derived metrics. The overall `pass` is
+    /// computed from the metrics — never passed in — and the result is
+    /// validated before it is returned, so this path cannot emit an artifact
+    /// whose stored numbers disagree with themselves or whose `pass` was forged.
+    #[allow(clippy::too_many_arguments)]
+    pub fn assemble(
+        case_id: impl Into<String>,
+        case_hash: impl Into<String>,
+        model_version: impl Into<String>,
+        source_hashes: BTreeMap<String, String>,
+        input_hash: impl Into<String>,
+        metrics: Vec<ComparedMetric>,
+        known_limitations: Vec<String>,
+    ) -> Result<Self, String> {
+        let mut primary = metrics
+            .iter()
+            .filter(|metric| metric.kind == MetricKind::Primary)
+            .peekable();
+        let pass = primary.peek().is_some() && primary.all(|metric| metric.pass);
+        let artifact = Self {
+            schema_version: EVIDENCE_SCHEMA_VERSION,
+            case_id: case_id.into(),
+            case_hash: case_hash.into(),
+            model_version: model_version.into(),
+            source_hashes,
+            input_hash: input_hash.into(),
+            metrics,
+            pass,
+            known_limitations,
+        };
+        artifact.validate()?;
+        Ok(artifact)
     }
 
     pub fn canonical_bytes(&self) -> Result<Vec<u8>, String> {
@@ -466,6 +579,7 @@ mod evidence_policy_tests {
             metrics: vec![ComparedMetric {
                 id: "apogee_absolute_error_m".into(),
                 unit: "meter".into(),
+                kind: MetricKind::Primary,
                 measured,
                 simulated,
                 abs_error,
@@ -552,6 +666,48 @@ mod evidence_policy_tests {
         case.enforce_evidence_policy().unwrap();
         let bytes = case.canonical_bytes().unwrap();
         ValidationCase::from_canonical_bytes(&bytes).unwrap();
+    }
+
+    #[test]
+    fn input_consistency_metrics_do_not_gate_the_overall_pass() {
+        let hash = flight_case().case_hash().unwrap();
+        // One passing primary metric and a *failing* input-consistency metric.
+        let primary = ComparedMetric::derive("apogee", "meter", 3000.0, 3100.0, 300.0);
+        assert!(primary.pass);
+        let failing_check =
+            ComparedMetric::derive("burnout", "second", 3.0, 9.0, 0.005).as_input_consistency();
+        assert!(!failing_check.pass);
+
+        let artifact = ComparisonArtifact::assemble(
+            "unit-flight",
+            hash,
+            "test-model-1",
+            BTreeMap::from([("fixture".into(), "b".repeat(64))]),
+            "c".repeat(64),
+            vec![primary, failing_check],
+            vec!["input-consistency does not gate".into()],
+        )
+        .unwrap();
+        // A failing input-consistency check must not drag the overall result down.
+        assert!(artifact.pass);
+        artifact.validate().unwrap();
+
+        // ...and with no primary metric at all, an input-consistency-only
+        // artifact cannot claim a pass.
+        let only_check =
+            ComparedMetric::derive("burnout", "second", 3.0, 3.0, 0.005).as_input_consistency();
+        assert!(only_check.pass);
+        let no_primary = ComparisonArtifact::assemble(
+            "unit-flight",
+            flight_case().case_hash().unwrap(),
+            "test-model-1",
+            BTreeMap::from([("fixture".into(), "b".repeat(64))]),
+            "c".repeat(64),
+            vec![only_check],
+            vec![],
+        )
+        .unwrap();
+        assert!(!no_primary.pass);
     }
 
     #[test]
