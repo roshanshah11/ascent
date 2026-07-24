@@ -25,3 +25,10 @@ visualizer/AscentUnity/Assets/StreamingAssets.meta
 *.booproj
 *.unityproj
 .DS_Store
+
+# Scratch/session artifacts — not source of record
+scratchpad_*.log
+handoff.md
+*.Rhistory
+# Conversation exports are local session logs, not tracked source
+docs/session-exports/
