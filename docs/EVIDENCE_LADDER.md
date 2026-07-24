@@ -78,7 +78,11 @@ do not support.
 | `valkyrie-2025-flight.json` | `FlightDataAvailable` | License-cleared measured Valkyrie 2025 flight data is ingested and hash-pinned. **No model-versus-flight numerical comparison has been executed yet.** |
 
 **No case is `FlightValidated` today.** The Valkyrie case holds measured flight
-data whose provenance is frozen, but until an executed comparison of the model's
-outputs against those measurements passes predefined tolerances, it remains at
-`FlightDataAvailable`. That comparison harness is the next step; its result —
-pass or fail — will be published here.
+data whose provenance is frozen, but a model-versus-flight comparison **cannot
+currently be executed**: the checked-in dataset is a two-column altitude trace
+with no simulation inputs (no vehicle, motor, launch geometry, or wind), so
+there is nothing to run the model from. The full input/output inventory and the
+reasons the inputs are not reconstructed from another tool are recorded in
+[`VALKYRIE_VALIDATION.md`](VALKYRIE_VALIDATION.md). Until a documented,
+hash-pinned flight configuration exists and an executed comparison passes
+predefined tolerances, the case remains at `FlightDataAvailable`.

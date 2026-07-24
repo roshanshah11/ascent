@@ -74,3 +74,56 @@ fn deterministic_results_keep_levels_and_caveats_visible() {
         result.canonical_bytes().unwrap()
     );
 }
+
+/// Executed evidence for the `FlightDataAvailable` claim (see
+/// `docs/VALKYRIE_VALIDATION.md`). The measured Valkyrie trace is real,
+/// hash-pinned, and contains **exactly** a time/altitude signal — no vehicle,
+/// motor, or event channel from which a simulation *input* could be built. This
+/// test documents both what the dataset can supply (measured apogee and
+/// time-to-apogee) and, by asserting the two-column shape, what it cannot. It is
+/// characterization of the measured data, not a model-versus-flight comparison;
+/// the case therefore cannot be `FlightValidated`.
+#[test]
+fn valkyrie_measured_signal_is_characterized() {
+    let case_bytes =
+        std::fs::read(workspace().join("data/validation/cases/valkyrie-2025-flight.json")).unwrap();
+    let case = ValidationCase::from_canonical_bytes(&case_bytes).unwrap();
+    assert_eq!(case.evidence_level, EvidenceLevel::FlightDataAvailable);
+
+    let csv = std::fs::read(workspace().join(&case.fixture.path)).unwrap();
+    // The characterized bytes are exactly the hash-pinned fixture.
+    case.verify_fixture_bytes(&csv).unwrap();
+
+    let text = String::from_utf8(csv).unwrap();
+    let mut lines = text.lines();
+    // Two columns only: the executed proof that no input channel is present.
+    assert_eq!(lines.next().unwrap().trim(), "time,altitude");
+
+    let mut rows: Vec<(f64, f64)> = Vec::new();
+    for line in lines {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let mut fields = line.split(',');
+        let t: f64 = fields.next().unwrap().parse().unwrap();
+        let altitude: f64 = fields.next().unwrap().parse().unwrap();
+        assert!(fields.next().is_none(), "unexpected third column");
+        rows.push((t, altitude));
+    }
+    assert_eq!(rows.len(), 12_578);
+
+    let (apogee_t, apogee_alt) =
+        rows.iter().copied().fold(
+            (0.0_f64, f64::MIN),
+            |acc, (t, a)| if a > acc.1 { (t, a) } else { acc },
+        );
+    // The only outputs this dataset can supply. Pinned tight because the fixture
+    // is frozen and hash-verified above.
+    assert!((apogee_alt - 2059.0).abs() < 1.0, "apogee {apogee_alt}");
+    assert!((apogee_t - 20.84).abs() < 0.05, "time-to-apogee {apogee_t}");
+
+    // Complete ascent and descent: a long trace that returns near the ground.
+    let duration = rows.last().unwrap().0 - rows.first().unwrap().0;
+    assert!(duration > 120.0, "duration {duration}");
+    assert!(rows.last().unwrap().1 < 10.0, "final altitude");
+}
