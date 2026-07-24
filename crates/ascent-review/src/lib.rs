@@ -22,6 +22,7 @@ use ascent_sim::{
 use serde::{Deserialize, Serialize};
 
 pub mod alignment;
+pub mod ndrt_2020;
 pub mod reconciliation;
 pub mod structural;
 pub mod validation;
