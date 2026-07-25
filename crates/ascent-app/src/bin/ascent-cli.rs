@@ -12,6 +12,16 @@ fn main() -> ExitCode {
         ["run-study", path, study] => std::fs::read_to_string(path)
             .map_err(|e| format!("cannot read {path}: {e}"))
             .and_then(|toml| ascent_app::cli::run_study(&toml, study)),
+        ["compare-flight", case, "--output", dir] => ascent_app::cli::compare_flight(
+            case,
+            std::path::Path::new(dir),
+            // The one explicitly allowed source of run-to-run variation; it
+            // lands in manifest.json and nowhere else.
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
+        ),
         ["create-review-bundle", path] => create_review_bundle(path),
         ["verify-review-bundle", path] => verify_review_bundle(path),
         _ => {

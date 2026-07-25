@@ -4,6 +4,8 @@
 //! replay or a study run is a deterministic, hash-stamped artifact that
 //! a pipeline can diff.
 
+use std::path::Path;
+
 use crate::design::Design;
 use crate::dispersion_ipc::{self, DispersionRequest};
 use crate::document::Document;
@@ -112,6 +114,56 @@ pub fn run_study(project_toml: &str, study_ref: &str) -> Result<String, String> 
     serde_json::to_string_pretty(&output).map_err(|e| e.to_string())
 }
 
+/// `ascent-cli compare-flight <case> --output <directory>`: run the executed,
+/// non-calibrated flight comparison for `case` and write a self-contained
+/// evidence directory.
+///
+/// The comparison itself lives in `ascent_review::ndrt_2020_export` — this
+/// function only resolves the selector, does the filesystem I/O, and turns the
+/// outcome into the CLI's `Result<String, String>` contract, so an integrity,
+/// execution, or artifact-validation failure surfaces as a nonzero exit.
+///
+/// A *failing* comparison is still exported in full, then reported as an error:
+/// the evidence is written before the failure is raised, never suppressed.
+pub fn compare_flight(
+    case_ref: &str,
+    output_dir: &Path,
+    generated_at_unix_s: u64,
+) -> Result<String, String> {
+    use ascent_review::ndrt_2020_export as export;
+
+    if case_ref != export::CASE_SELECTOR {
+        return Err(format!(
+            "unknown flight comparison '{case_ref}' (available: {})",
+            export::CASE_SELECTOR
+        ));
+    }
+    let exported = export::run_canonical_export(generated_at_unix_s)?;
+
+    std::fs::create_dir_all(output_dir)
+        .map_err(|error| format!("cannot create {}: {error}", output_dir.display()))?;
+    for file in &exported.files {
+        let path = output_dir.join(file.name);
+        std::fs::write(&path, &file.bytes)
+            .map_err(|error| format!("cannot write {}: {error}", path.display()))?;
+    }
+
+    let report = format!(
+        "{}\n  wrote {} files to {}\n",
+        exported.terminal_summary,
+        exported.files.len(),
+        output_dir.display()
+    );
+    if !exported.pass() {
+        // Written, then failed: the directory is on disk and the failure is loud.
+        return Err(format!(
+            "flight comparison FAILED its primary metrics — evidence written to {}\n\n{report}",
+            output_dir.display()
+        ));
+    }
+    Ok(report)
+}
+
 pub const USAGE: &str = "\
 ascent-cli — headless Ascent runner
 
@@ -126,6 +178,13 @@ USAGE:
                                           offline review smoke fixture
     ascent-cli verify-review-bundle <bundle.ascent-review>
                                           verify hashes and exact journal reopen
+    ascent-cli compare-flight ndrt-2020 --output <directory>
+                                          run the executed, non-calibrated flight
+                                          comparison against the hash-pinned NDRT
+                                          2020 measured flight and write a
+                                          self-contained evidence directory
+                                          (comparison artifact, Markdown summary,
+                                          provenance manifest, case copy)
 ";
 
 #[cfg(test)]
