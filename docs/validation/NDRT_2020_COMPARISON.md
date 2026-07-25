@@ -6,6 +6,50 @@ flight. Scope: **launch through measured apogee only**. Provenance, units, and
 the no-fitting rule are frozen in
 [`NDRT_2020_SOURCE_SPEC.md`](./NDRT_2020_SOURCE_SPEC.md).
 
+## Run it yourself
+
+```bash
+cargo run --bin ascent-cli -- compare-flight ndrt-2020 --output ./ndrt-evidence
+```
+
+One command, no arguments to choose: the case, the telemetry, and the motor are
+embedded from the hash-pinned checked-in sources, so the run cannot be pointed
+at an unpinned specification. The command loads the canonical case, verifies
+every consumed source against its pin and the case identity, executes the
+authoritative simulator, recomputes the comparison artifact, and **verifies the
+recomputation against the artifact attached to the case**. It prints a concise
+terminal summary and exits nonzero on any execution, integrity, or
+artifact-validation failure — a failed comparison is written out in full and
+then reported as a failure, never suppressed.
+
+The output directory is self-contained:
+
+| File | Contents |
+|------|----------|
+| `comparison-artifact.json` | the machine-readable `ComparisonArtifact` |
+| `SUMMARY.md` | readable report: result, hashes, both metric tables, caveats, limits |
+| `manifest.json` | provenance: the full pinned packet and the subset consumed and verified, case/config hashes, metric results, evidence label, limitations |
+| `validation-case.json` | the canonical case as loaded, so the directory stands alone |
+
+Everything is deterministic except `manifest.json`'s `generated_at_unix_s` —
+two runs into two clean directories produce byte-identical evidence apart from
+that one field. The workflow adds no physics, no case, and no tolerance of its
+own; it is `ascent_review::ndrt_2020_export` over the harness described below,
+and is exercised by `crates/ascent-review/tests/ndrt_2020_export.rs` and
+`crates/ascent-app/tests/compare_flight.rs`.
+
+Running it does **not** promote the evidence label: the export reports the rung
+the case declares (`flight_data_available`) together with the credibility
+caveats verbatim.
+
+Two source counts are reported, kept deliberately apart: the **full source
+packet pinned** — 6 files, every one carrying a SHA-256 in
+[`NDRT_2020_SOURCE_SPEC.md`](./NDRT_2020_SOURCE_SPEC.md) — and the **simulation
+inputs consumed and verified** — 3 files (the telemetry CSV, the motor `.eng`,
+and the canonical case), the only ones this run reads and re-hashes. Pins for
+packet files the run does not consume are carried from the source spec and are
+not re-verified by the command.
+
 ## Credibility scope
 
 **Ascent performed no fitting or tuning against the measured flight.** However,
