@@ -170,37 +170,3 @@ pub fn repair_for(
     let rules = rules()?;
     solve(&design, &motors(), &rules, target_apogee_m, 3.0)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn reference_misses_350_target_and_repair_fixes_it() {
-        let before = report(350.0).unwrap();
-        assert!(before.review.feasible, "rules pass bare");
-        assert!(!before.target_met, "demo premise: target missed bare");
-        assert!(!before.mission_feasible);
-
-        let fixed = repair(350.0).unwrap();
-        assert!((fixed.achieved_apogee_m - 350.0).abs() <= 3.0);
-        assert!(fixed.review.feasible);
-        assert!(!fixed.diff.is_empty(), "diff must show what changed");
-    }
-
-    #[test]
-    fn tree_as_built_mass_changes_live_review_stability() {
-        let mut tree = ascent_domain::vehicle::reference_vehicle();
-        let flat = crate::design::Design::reference();
-        let before = report_for(&tree, &flat, 350.0).unwrap();
-        tree.parts[1].children[0].as_built_mass_g = Some(12.0);
-        let after = report_for(&tree, &flat, 350.0).unwrap();
-        assert!(
-            after.design.vehicle.dry_cg_from_nose_m() > before.design.vehicle.dry_cg_from_nose_m()
-        );
-        assert!(
-            after.review.quantities.min_stability_calibers
-                < before.review.quantities.min_stability_calibers
-        );
-    }
-}

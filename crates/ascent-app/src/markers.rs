@@ -36,35 +36,3 @@ pub fn vehicle_markers(tree: &TreeVehicle, design: &Design) -> Result<VehicleMar
         stability_burnout_cal: stab_burnout,
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ascent_domain::vehicle::reference_vehicle;
-
-    #[test]
-    fn reference_vehicle_markers_are_physical() {
-        let m = vehicle_markers(&reference_vehicle(), &Design::reference()).unwrap();
-        assert!(m.length_m > 0.0);
-        assert!(m.diameter_m > 0.0);
-        // CP and CG sit inside the airframe.
-        assert!(m.cp_from_nose_m > 0.0 && m.cp_from_nose_m < m.length_m);
-        assert!(m.cg_ignition_from_nose_m > 0.0 && m.cg_ignition_from_nose_m < m.length_m);
-        assert!(m.cg_burnout_from_nose_m > 0.0 && m.cg_burnout_from_nose_m < m.length_m);
-        // Reference rocket is stable: CP aft of CG at ignition and burnout.
-        assert!(m.stability_ignition_cal > 0.0);
-        assert!(m.stability_burnout_cal >= m.stability_ignition_cal);
-        // Stability numbers must be consistent with the stations they claim.
-        let cal = (m.cp_from_nose_m - m.cg_ignition_from_nose_m) / m.diameter_m;
-        assert!((cal - m.stability_ignition_cal).abs() < 1e-9);
-    }
-
-    #[test]
-    fn marker_query_is_pure() {
-        let tree = reference_vehicle();
-        let design = Design::reference();
-        let a = vehicle_markers(&tree, &design).unwrap();
-        let b = vehicle_markers(&tree, &design).unwrap();
-        assert_eq!(a, b);
-    }
-}

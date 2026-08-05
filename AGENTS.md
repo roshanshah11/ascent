@@ -49,13 +49,23 @@ rtk pip list            rtk pnpm install        rtk npm run <script>
 
 ## Product Direction
 
-Ascent is a local-first aerospace engineering workbench that targets the evidence and workflow discipline Basilisk, Nyx, RocketPy, and GMAT users expect — not comparable model or physics depth.
+**Under active revision — deliberately blank.** The previous direction was removed on
+2026-07-29. Do not infer product direction from code, docs, or git history; ask.
 
-- Measuring user: a GNC or flight-dynamics engineer at a new-space or defense-tech startup.
-- Goal: Basilisk-grade evidence discipline — comparable verification, provenance, and validation rigor, not comparable model depth — inside a real workbench that an AI agent can operate.
-- This is a serious craft project, not a product being sold. Do not invent customers, sales strategy, a market wedge, TAM, or student-market positioning.
-- Do not frame Ascent as competition rocketry, collegiate software, a hobbyist tool, or an OpenRocket replacement.
-- IREC/DTEG support is an optional versioned rule pack and validation fixture, not the product identity.
-- Favor modular fidelity, uncertainty quantification, repeatability, provenance, scripting and agent operation, and professional interoperability.
+## Load-bearing invariants (these are architecture, not direction)
 
-The authoritative direction is `docs/PRODUCT_DIRECTION.md`; the capability roadmap is `docs/plan/2026-07-18-v1-roadmap.md`.
+1. **Single command spine.** Every mutation of user state is a serde-serializable
+   `Command` applied through one `Document` dispatcher. GUI, CLI, MCP are clients.
+2. **Deterministic replay.** The journal replays byte-identically. Every engine is
+   `same inputs → same bytes`. The golden pin in `crates/ascent-app/tests/regression.rs`
+   stays green.
+3. **Render layer dispatches zero commands.** Views consume snapshots and journals only.
+4. **No runtime network.** External data enters as hashed files.
+5. **Explicit provenance.** Results carry input hashes, model versions, and assumptions.
+
+## Docs that are load-bearing
+
+`docs/` was pruned to derivations, format contracts, and provenance records cited from
+code. `docs/CROSS_VALIDATION.md` is `include_str!`d by `ascent-sim` tests — deleting it
+breaks the build. `credibility.rs` cites `docs/EVIDENCE.md` in shipped user-facing
+strings. Do not delete anything in `docs/` without grepping for citations first.

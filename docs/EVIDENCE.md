@@ -9,9 +9,13 @@ OpenRocket 24.12, bundled **"A simple model rocket"** example, Estes **C6-5**,
 default launch conditions (Cape Canaveral site: latitude-adjusted gravity
 9.792 m/s², 15 °C, 1013.25 mbar, 2 m/s wind, 1 m launch rod). Manually
 exported simulation table: `data/reference/openrocket-alpha3-c6.csv`
-(650 rows, 58 variables, event markers). Frozen headline values:
-`crates/ascent-sim/tests/fixtures/openrocket_alpha3_c6.json`.
-Regression tests: `crates/ascent-sim/tests/openrocket_reference.rs`.
+(650 rows, 58 variables, event markers).
+
+> **Status:** the automated regression tests that previously pinned these
+> comparisons were removed along with the rest of the legacy suite. The
+> reference export above is retained as ground truth; the numbers in this
+> document are not currently enforced by any check until the new test suite
+> re-establishes them.
 
 Note: this example rocket is *not* the Estes Alpha III kit — it is heavier
 (71.26 g at liftoff vs ~58 g). Same 25 mm diameter, same motor class. All

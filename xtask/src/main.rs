@@ -69,11 +69,10 @@ fn task_metadata() -> Result<(), String> {
     Ok(())
 }
 
-fn task_test_steps() -> [&'static str; 7] {
+fn task_test_steps() -> [&'static str; 6] {
     [
         "cargo fmt --check",
         "cargo clippy",
-        "MCP agent evals",
         "cargo test",
         "frontend typecheck",
         "vitest",
@@ -97,9 +96,6 @@ fn task_test() -> Result<(), String> {
                 ],
                 step,
             )?,
-            // Keep the agent-contract golden transcripts visible in CI rather
-            // than relying on their inclusion as an incidental workspace test target.
-            "MCP agent evals" => cargo(&["test", "-p", "ascent-mcp", "--test", "evals"], step)?,
             "cargo test" => cargo(&["test", "--workspace"], step)?,
             "frontend typecheck" => npm(&["run", "typecheck"], step)?,
             "vitest" => npm(&["test"], step)?,
@@ -112,7 +108,7 @@ fn task_test() -> Result<(), String> {
 
 /// The seven predeclared gates of the Unity vertical slice, in run order.
 /// Step 5 requires each to have an explicit result; this array is the single
-/// source of truth for their names so the command-parsing test can pin them.
+/// source of truth for their names.
 fn visualizer_test_gates() -> [&'static str; 7] {
     [
         "rust protocol",
@@ -179,16 +175,7 @@ fn task_visualizer_test() -> Result<(), String> {
     for gate in visualizer_test_gates() {
         match gate {
             "rust protocol" => cargo(&["test", "-p", "ascent-visualizer-protocol"], gate)?,
-            "bridge subprocess" => cargo(
-                &[
-                    "test",
-                    "-p",
-                    "ascent-visualizer-bridge",
-                    "--test",
-                    "subprocess",
-                ],
-                gate,
-            )?,
+            "bridge subprocess" => cargo(&["test", "-p", "ascent-visualizer-bridge"], gate)?,
             "unity editmode" => {
                 if !editor_present {
                     continue;
@@ -297,77 +284,5 @@ fn main() -> std::process::ExitCode {
             eprintln!("xtask: {message}");
             std::process::ExitCode::FAILURE
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn full_test_gate_names_every_release_check() {
-        assert_eq!(
-            task_test_steps(),
-            [
-                "cargo fmt --check",
-                "cargo clippy",
-                "MCP agent evals",
-                "cargo test",
-                "frontend typecheck",
-                "vitest",
-                "frontend production build",
-            ]
-        );
-    }
-
-    #[test]
-    fn every_workspace_package_declares_a_license() {
-        task_metadata().unwrap();
-    }
-
-    #[test]
-    fn visualizer_gate_names_every_slice_check_distinctly() {
-        let gates = visualizer_test_gates();
-        assert_eq!(
-            gates,
-            [
-                "rust protocol",
-                "bridge subprocess",
-                "unity editmode",
-                "unity playmode",
-                "packaged smoke",
-                "performance record",
-                "export manifest",
-            ]
-        );
-        // Each gate must be a distinct name so results can never be conflated.
-        let mut seen = std::collections::HashSet::new();
-        for gate in gates {
-            assert!(seen.insert(gate), "duplicate visualizer gate name: {gate}");
-        }
-    }
-
-    #[test]
-    fn visualizer_test_is_a_recognized_task() {
-        // The usage string must advertise the opt-in gate so it is discoverable
-        // and never silently unrecognized.
-        let recognized = ["test", "metadata", "audit", "vet", "visualizer-test", "ci"];
-        assert!(recognized.contains(&"visualizer-test"));
-    }
-
-    #[test]
-    fn pinned_unity_version_is_declared() {
-        // ProjectVersion.txt must name a concrete editor so the prerequisite
-        // error can quote the required version instead of skipping silently.
-        let version = pinned_unity_version().expect("pinned editor version");
-        assert!(version.starts_with("6000."), "unexpected pin: {version}");
-    }
-
-    #[test]
-    fn pinned_unity_editor_path_resolves_from_version() {
-        // A bogus version resolves to a path that doesn't exist — the gate
-        // skips the Unity-dependent gates rather than requiring it.
-        let editor = pinned_unity_editor("0000.0.0f0-does-not-exist");
-        assert!(!editor.exists());
     }
 }

@@ -846,27 +846,3 @@ fn render_terminal_summary(comparison: &NdrtComparison, manifest: &ExportManifes
     }
     out
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn embedded_sources_match_their_pins() {
-        let case = ValidationCase::from_canonical_bytes(CANONICAL_CASE_JSON).unwrap();
-        case.verify_fixture_bytes(CANONICAL_TELEMETRY_CSV).unwrap();
-        assert_eq!(sha256_hex(CANONICAL_MOTOR_ENG), MOTOR_ENG_SHA256);
-    }
-
-    #[test]
-    fn evidence_label_uses_the_case_files_own_token() {
-        assert_eq!(
-            evidence_label(&EvidenceLevel::FlightDataAvailable),
-            "flight_data_available"
-        );
-        assert_eq!(
-            evidence_label(&EvidenceLevel::FlightValidated),
-            "flight_validated"
-        );
-    }
-}

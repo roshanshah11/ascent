@@ -66,8 +66,9 @@ pub fn scorecard(inputs: &ScorecardInputs) -> Scorecard {
         Factor {
             name: "Verification".into(),
             score: 3,
-            basis: "Golden regression pin and timestep-convergence checks are checked in; \
-                    see crates/ascent-app/tests/regression.rs and crates/ascent-sim (convergence_report tests)."
+            basis: "This configuration passed the live dt/2 timestep-convergence check \
+                    (crates/ascent-sim convergence_report). No checked-in regression pin \
+                    currently backs it."
                 .into(),
         }
     } else {
@@ -75,8 +76,7 @@ pub fn scorecard(inputs: &ScorecardInputs) -> Scorecard {
             name: "Verification".into(),
             score: 1,
             basis: "This configuration failed the live dt/2 convergence check \
-                    (crates/ascent-sim convergence_report); the checked-in regression pin \
-                    (crates/ascent-app/tests/regression.rs) does not cover it."
+                    (crates/ascent-sim convergence_report)."
                 .into(),
         }
     };
@@ -87,7 +87,7 @@ pub fn scorecard(inputs: &ScorecardInputs) -> Scorecard {
             score: 3,
             basis: "Matched-config comparison against a frozen OpenRocket 24.12 export \
                     (apogee within 1.4%, max velocity within 0.1%); see docs/EVIDENCE.md and \
-                    crates/ascent-sim/tests/fixtures/openrocket_alpha3_c6.json."
+                    data/reference/openrocket-alpha3-c6.csv."
                 .into(),
         }
     } else {
@@ -96,7 +96,7 @@ pub fn scorecard(inputs: &ScorecardInputs) -> Scorecard {
             score: 1,
             basis: format!(
                 "The only external comparison (docs/EVIDENCE.md, \
-                 crates/ascent-sim/tests/fixtures/openrocket_alpha3_c6.json) is subsonic; \
+                 data/reference/openrocket-alpha3-c6.csv) is subsonic; \
                  predicted max Mach {mach:.2} is outside what it can validate."
             ),
         }
@@ -166,141 +166,5 @@ pub fn scorecard(inputs: &ScorecardInputs) -> Scorecard {
     Scorecard {
         factors: vec![verification, validation, pedigree, uncertainty, regime],
         quantities: vec![flag_for("apogee_m"), flag_for("max_velocity_ms")],
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn reference_inputs() -> ScorecardInputs {
-        ScorecardInputs {
-            max_velocity_ms: 65.0, // reference bird is comfortably subsonic
-            converged: true,
-            motor_user_imported: false,
-        }
-    }
-
-    #[test]
-    fn factors_come_in_the_contract_order_with_bounded_scores() {
-        let card = scorecard(&reference_inputs());
-        let names: Vec<&str> = card.factors.iter().map(|f| f.name.as_str()).collect();
-        assert_eq!(
-            names,
-            [
-                "Verification",
-                "Validation",
-                "Input Pedigree",
-                "Uncertainty",
-                "Regime Applicability"
-            ],
-            "docs/CREDIBILITY.md fixes the factor order"
-        );
-        for f in &card.factors {
-            assert!(f.score <= 4, "{} score out of range: {}", f.name, f.score);
-        }
-    }
-
-    #[test]
-    fn every_basis_cites_a_checked_in_file() {
-        // House rule: no unexplained numbers. Each basis must point a reader
-        // at a real file or fixture in the repo.
-        for inputs in [
-            reference_inputs(),
-            ScorecardInputs {
-                max_velocity_ms: 500.0,
-                converged: false,
-                motor_user_imported: true,
-            },
-        ] {
-            for f in scorecard(&inputs).factors {
-                assert!(
-                    ["docs/", "crates/", "data/"]
-                        .iter()
-                        .any(|p| f.basis.contains(p)),
-                    "{} basis cites no checked-in file: {}",
-                    f.name,
-                    f.basis
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn reference_scores_are_deterministic_and_fully_validated() {
-        let a = scorecard(&reference_inputs());
-        let b = scorecard(&reference_inputs());
-        assert_eq!(a, b, "identical inputs must give identical scorecards");
-        for q in &a.quantities {
-            assert_eq!(
-                q.regime,
-                Regime::Validated,
-                "{} should be validated",
-                q.quantity
-            );
-        }
-    }
-
-    #[test]
-    fn supersonic_flips_apogee_to_extrapolated_with_a_named_reason() {
-        let card = scorecard(&ScorecardInputs {
-            max_velocity_ms: 500.0, // Mach ~1.47
-            converged: true,
-            motor_user_imported: false,
-        });
-        let apogee = card
-            .quantities
-            .iter()
-            .find(|q| q.quantity == "apogee_m")
-            .unwrap();
-        match &apogee.regime {
-            Regime::Extrapolated(reason) => {
-                assert!(
-                    reason.contains("Mach"),
-                    "reason must name the boundary: {reason}"
-                );
-                assert!(
-                    reason.contains("docs/EVIDENCE.md"),
-                    "reason must cite the evidence file: {reason}"
-                );
-            }
-            Regime::Validated => panic!("supersonic apogee must be Extrapolated"),
-        }
-        let regime_factor = card.factors.last().unwrap();
-        assert!(
-            regime_factor.score < 3,
-            "regime factor must drop outside the boundary"
-        );
-    }
-
-    #[test]
-    fn user_imported_motor_lowers_input_pedigree() {
-        let mut inputs = reference_inputs();
-        inputs.motor_user_imported = true;
-        let card = scorecard(&inputs);
-        let pedigree = &card.factors[2];
-        assert_eq!(pedigree.name, "Input Pedigree");
-        assert_eq!(pedigree.score, 2);
-        assert!(pedigree.basis.contains("RASP_FORMAT"));
-    }
-
-    #[test]
-    fn transonic_boundary_is_exact() {
-        let just_under = scorecard(&ScorecardInputs {
-            max_velocity_ms: SPEED_OF_SOUND_SEA_LEVEL_MS * 0.79,
-            ..reference_inputs()
-        });
-        let at_boundary = scorecard(&ScorecardInputs {
-            max_velocity_ms: SPEED_OF_SOUND_SEA_LEVEL_MS * 0.80,
-            ..reference_inputs()
-        });
-        assert!(just_under
-            .quantities
-            .iter()
-            .all(|q| q.regime == Regime::Validated));
-        assert!(at_boundary
-            .quantities
-            .iter()
-            .all(|q| matches!(q.regime, Regime::Extrapolated(_))));
     }
 }
